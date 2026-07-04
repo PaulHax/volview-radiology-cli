@@ -1,0 +1,14 @@
+{
+  "MaskedMedianFilter": {
+    "type": "python"
+  },
+  "MedianFilter": {
+    "type": "python"
+  },
+  "OtsuSegmentation": {
+    "type": "python"
+  },
+  "ThresholdSegmentation": {
+    "type": "python"
+  }
+}
