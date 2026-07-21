@@ -1,8 +1,7 @@
 """ITK median filter -- slicer_cli_web-compatible CLI.
 
-Input assembly (multi-slice DICOM -> one correctly spaced volume) and the v1 b3
-Girder fetch both live in the shared ``volview_cli_base`` package; this script
-is the thin filter on top. Uses real ITK (the ``itk`` package), per D10.
+The shared ``volview_cli_base`` package resolves inputs and assembles multi-file
+DICOM series before this module applies the filter.
 """
 
 import os

@@ -1,10 +1,8 @@
-"""Masked-composite primitives -- pure ``numpy``, no ITK, no Girder.
+"""Masked-composite primitives using only ``numpy``.
 
-The Chunk 16 labelmap-consuming CLI (``MaskedMedianFilter``) filters a
-background volume but keeps the result only where a painted labelmap is
-nonzero. The array math is factored here so it is unit-testable offline (numpy
-ships without the ITK/Docker layer) and stays a pure function -- the CLI script
-does the ITK read/filter/write and hands plain arrays down.
+``MaskedMedianFilter`` filters a background volume but keeps the result only
+where a painted labelmap is nonzero. The CLI handles image I/O and passes plain
+arrays to these functions.
 
 Label values are read from the labelmap **without a float cast** (the CLI never
 ``to_scalar_float``'s the labelmap the way it does the background), so an

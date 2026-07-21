@@ -1,19 +1,15 @@
-"""Pure ITK volume assembly -- the shared, backend-agnostic core (D10).
+"""Assemble on-disk medical images into ITK volumes.
 
 ``assemble(local_paths) -> itk.Image`` turns a set of on-disk files into one
-volume. It is deliberately **pure**: it imports ``itk`` (and the standard
-library) and **nothing from Girder** (AC2, the portability-containment pin), so
-the v1->v2 migration (Option C: bind-mounted local paths) only deletes the
-``girder_input`` download front-end and keeps this module untouched.
+volume without depending on Girder.
 
 Geometry is the whole point of this module. A multi-slice DICOM series is
 ordered by **metadata** (``GDCMSeriesFileNames`` sorts by the per-slice
 ``ImagePositionPatient`` projected on the slice normal) and read with
 ``ImageSeriesReader``, so inter-slice spacing and orientation come from the
-DICOM headers -- never from the order the files happened to arrive in. This is
-where the single-slice ``[1, 1, 1]`` spacing class of bug dies: the caller's
-URI/path order and any advisory ``format`` tag are ignored for ordering; the
-bytes decide.
+DICOM headers -- never from the order the files happened to arrive in. The
+caller's URI/path order and any advisory ``format`` tag are ignored for ordering;
+the DICOM metadata determines the geometry.
 """
 
 import os
@@ -30,8 +26,7 @@ _SERIES_DIMENSION = 3
 def _is_dicom(path):
     """Sniff bytes: does GDCM recognize this file as DICOM?
 
-    Byte-level, not name-level -- a DICOM slice with no extension (the L3 layout,
-    one file per item) still sorts into the series.
+    Byte-level detection allows extensionless DICOM slices to join the series.
     """
     image_io = itk.GDCMImageIO.New()
     return bool(image_io.CanReadFile(str(path)))
@@ -122,9 +117,8 @@ def to_scalar_float(image):
     """Return a single-component float32 view of ``image`` (geometry preserved).
 
     The segmentation filters compute on a scalar float image. ``itk.Image``'s
-    ``astype`` preserves spacing/origin/direction (it is a cast, not a NumPy
-    round-trip). v1 inputs are scalar volumes; a genuinely multi-component
-    input is out of scope and ITK will raise a clear cast error.
+    ``astype`` preserves spacing/origin/direction because it is a cast rather
+    than a NumPy round-trip. ITK rejects unsupported multi-component inputs.
     """
     return image.astype(_SERIES_PIXEL_TYPE)
 

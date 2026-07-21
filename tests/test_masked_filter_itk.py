@@ -1,9 +1,6 @@
 """End-to-end masked-median-filter pipeline over real ITK images.
 
-``itk`` is NOT importable in the offline gate harness, so these SKIP there and
-RUN in the Docker image (which has itk) or by the human driver -- the same
-pattern as ``test_assemble``. They mirror ``MaskedMedianFilter.main`` (without
-its ``slicer_cli_web`` shell) to lock two Chunk 16 pins:
+These tests mirror the image-processing portion of ``MaskedMedianFilter.main``:
 
 - the labelmap is read by ``assemble`` with its integer label values intact (no
   float cast), so a nonzero-label mask is exact;

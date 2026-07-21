@@ -2,11 +2,8 @@
 
 Produces a compressed ``.seg.nrrd`` labelmap with N+1 levels (0=background plus
 N foreground labels). Each label's display name and RGB color travel *inside*
-the file as Slicer-convention ``Segment{N}_*`` metadata (Chunk 34), so the
+the file as Slicer-convention ``Segment{N}_*`` metadata, so the
 client recovers them on load — no separate sidecar paired by position.
-
-Input assembly + the v1 b3 Girder fetch live in the shared ``volview_cli_base``
-package. Uses real ITK (the ``itk`` package), per D10.
 """
 
 import os

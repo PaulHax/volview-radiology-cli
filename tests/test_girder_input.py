@@ -1,9 +1,7 @@
-"""Download front-end (v1 b3) tests -- run fully offline.
+"""Tests for resolving Girder file ids and existing local paths.
 
-``girder_client`` is importable in the harness, but a fake client is injected so
-no Girder server is needed. This covers the comma-split / id-vs-path
-classification / fail-closed logic that turns the facade's forwarded
-``inputVolume`` string into local paths for ``assemble``.
+A fake client avoids requiring a Girder server while covering token parsing,
+classification, downloads, and invalid inputs.
 """
 import os
 
@@ -75,7 +73,7 @@ def test_resolve_all_local_paths_needs_no_client(tmp_path):
 def test_resolve_fetches_ids_via_client(tmp_path):
     ids = ["6600000000000000000000a1", "6600000000000000000000a2",
            "6600000000000000000000a3"]
-    value = ",".join(ids)  # the facade's comma-joined shape
+    value = ",".join(ids)
     client = _FakeClient()
     dest = tmp_path / "dl"
     out = gi.resolve_inputs_to_local_paths(value, client=client, dest_dir=str(dest))

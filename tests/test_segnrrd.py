@@ -1,13 +1,9 @@
-"""Chunk 34: pin the ``.seg.nrrd`` embedded-metadata WRITE side.
+"""Tests for embedded ``.seg.nrrd`` metadata serialization.
 
 ``build_seg_metadata`` is the CLI half of the segment-metadata round-trip; the
 client half is VolView's ``parseSegNrrdMetadata`` (``src/io/segNrrdMetadata.ts``,
-covered by ``segNrrdMetadata.spec.ts``). This suite is the symmetric offline
-guard: it pins the exact Slicer-convention ``Segment{N}_*`` header keys/values
-the writer emits so a rename or format drift breaks a fast unit test rather than
-only the slow live e2e. It runs with NO itk installed — the itk import is lazy
-inside ``write_segmentation`` (the pure builder needs none), mirroring how the
-itk-guarded filter tests skip on the offline gate.
+covered by ``segNrrdMetadata.spec.ts``). These tests verify the corresponding
+Slicer-convention ``Segment{N}_*`` header keys and values.
 """
 from volview_cli_base.segnrrd import build_seg_metadata, _color_string
 
