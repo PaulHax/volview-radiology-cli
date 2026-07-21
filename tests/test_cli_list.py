@@ -25,7 +25,12 @@ def test_list_cli_output_unchanged(monkeypatch, capsys):
     # Returns without sys.exit; must still print the full spec.
     cli_list.processCLI("cli_list.json")
     out = capsys.readouterr().out
-    for task in ("OtsuSegmentation", "ThresholdSegmentation", "MedianFilter"):
+    for task in (
+        "OtsuSegmentation",
+        "ThresholdSegmentation",
+        "MedianFilter",
+        "RegionOfInterestReport",
+    ):
         assert task in out
 
 
