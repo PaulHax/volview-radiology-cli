@@ -45,7 +45,7 @@
   </parameters>
   <parameters advanced="true">
     <label>Girder API</label>
-    <description>Server access injected by slicer_cli_web for v1 b3 feeding; not shown to users.</description>
+    <description>Girder API URL injected by slicer_cli_web; not shown to users.</description>
     <string>
       <name>girderApiUrl</name>
       <longflag>girderApiUrl</longflag>

@@ -1,10 +1,7 @@
 """Geometry tests for the pure ITK ``assemble`` core.
 
-``itk`` is NOT importable in the offline gate harness, so these SKIP there and
-RUN in the Docker image (which has itk) or by the human driver -- see the chunk
-notes. They are the regression wall for the single-slice ``[1, 1, 1]`` spacing
-bug: a multi-slice DICOM series must come back with correct, metadata-derived
-z-spacing regardless of the order the files are handed in.
+A multi-slice DICOM series must retain metadata-derived z-spacing regardless of
+the order in which files are provided.
 """
 import os
 import random
@@ -50,8 +47,7 @@ def test_multislice_series_recovers_metadata_spacing():
     sx, sy, sz = _spacing(image)
     assert sx == pytest.approx(0.7, abs=1e-3)
     assert sy == pytest.approx(0.7, abs=1e-3)
-    # The bug this whole chunk exists to kill: a single-slice-style read would
-    # leave sz == 1.0. Assert it is the true inter-slice distance.
+    # A single-slice-style read would leave sz at the default 1.0.
     assert sz == pytest.approx(2.5, abs=1e-3)
     assert abs(sz - 1.0) > 0.5
 

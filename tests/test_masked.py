@@ -1,9 +1,7 @@
 """Masked-composite primitives (``volview_cli_base.masked``).
 
-Pure numpy, so unlike the itk-guarded suites these RUN in the offline gate
-harness. They lock the Chunk 16 composite pin: the filtered volume is kept only
-inside the nonzero labelmap and the original background is preserved everywhere
-else, on the labelmap's native integer dtype (no float cast).
+The filtered volume is kept only inside the nonzero labelmap. The original
+background and the labelmap's native integer dtype are otherwise preserved.
 """
 import numpy as np
 import pytest

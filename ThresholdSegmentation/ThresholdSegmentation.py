@@ -1,9 +1,7 @@
 """ITK threshold segmentation CLI.
 
-Input assembly + the v1 b3 Girder fetch live in the shared ``volview_cli_base``
-package. Uses real ITK (the ``itk`` package), per D10. The output is a
-compressed ``.seg.nrrd`` labelmap (uint8, background 0) whose single segment's
-name/color travel inside the file as Slicer-convention metadata (Chunk 34).
+The output is a compressed ``.seg.nrrd`` labelmap (uint8, background 0) with
+the segment name and color stored as Slicer-convention metadata.
 """
 
 import os

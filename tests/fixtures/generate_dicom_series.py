@@ -4,9 +4,8 @@ Run once, offline, with pydicom (the Docker image has itk but not pydicom, so
 these are committed as binary fixtures rather than generated at test time).
 
 Geometry is deliberately anisotropic -- in-plane 0.7mm, slice step 2.5mm -- so a
-correct assemble() recovers z-spacing 2.5 (the anti-[1,1,1] regression), and the
-slices are written with filenames in REVERSE z order so filename order != slice
-order (proves metadata sorting, not input order).
+correct assemble() recovers z-spacing 2.5. Slices use filenames in reverse z
+order to verify metadata sorting independently of filename order.
 """
 import os
 import numpy as np

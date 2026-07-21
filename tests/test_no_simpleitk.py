@@ -1,9 +1,7 @@
-"""Static acceptance guards -- run fully offline (no itk needed).
+"""Dependency-boundary tests that do not require ITK.
 
-- AC3: no SimpleITK import or dependency remains anywhere in the image
-  (every ``*.py`` + the Dockerfile), and itk is what the image installs.
-- AC2: the pure ``assemble`` core imports nothing from Girder (portability
-  containment -- so the v1->v2 swap only deletes the download front-end).
+- Python sources and the Dockerfile do not depend on SimpleITK.
+- The image installs ITK, and ``assemble`` has no Girder dependencies.
 """
 import ast
 import os

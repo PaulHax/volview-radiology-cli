@@ -3,8 +3,8 @@ TWO distinct SeriesInstanceUIDs.
 
 Run once, offline, with pydicom (the Docker image has itk but not pydicom, so
 this is committed as binary fixtures rather than generated at test time). It is
-the fail-closed regression wall for the ambiguous multi-series input: assemble()
-must RAISE rather than silently keep the first series and drop the rest.
+used to verify that ambiguous multi-series input is rejected rather than
+silently reduced to the first series.
 """
 import os
 

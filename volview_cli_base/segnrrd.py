@@ -1,7 +1,6 @@
-"""Write a labelmap as a compressed ``.seg.nrrd`` with embedded segment metadata.
+"""Write compressed ``.seg.nrrd`` labelmaps with segment metadata.
 
-The mirror of VolView's ``src/io/segNrrdMetadata.ts`` writer (Chunk 34): the
-segment names/colors travel *inside* the labelmap file as Slicer-convention
+Segment names and colors travel inside the labelmap file as Slicer-convention
 ``Segment{N}_*`` NRRD header fields, so the client recovers them on load (both
 ends are ITK NRRD IO) and no separate JSON sidecar is paired by position.
 
@@ -10,10 +9,8 @@ Pure ITK — imports nothing from Girder — so it stays on the CLI's portable c
 ``key:=value`` header field; ``itk-wasm``'s ``readImage`` surfaces those fields
 in the loaded image's metadata map, where ``parseSegNrrdMetadata`` picks them up.
 
-``itk`` is imported lazily inside ``write_segmentation`` so the pure header
-builder (``build_seg_metadata``/``_color_string``) — the half symmetric with the
-client's ``parseSegNrrdMetadata`` — is importable and unit-testable with no itk
-present (the offline gate has no itk, mirroring the itk-guarded filter tests).
+``itk`` is imported lazily inside ``write_segmentation`` so the metadata
+helpers remain usable without loading ITK.
 """
 
 
@@ -28,8 +25,8 @@ def build_seg_metadata(descriptors, dimensions):
     ``dimensions`` (x, y, z).
 
     ``descriptors``: an ordered list of ``{"value", "name", "color": [r,g,b,...]}``
-    (the same shape the retired JSON sidecar carried). ``Segment{N}`` uses the
-    enumeration index N (0-based); ``LabelValue`` is the voxel value.
+    ``Segment{N}`` uses the zero-based enumeration index; ``LabelValue`` is the
+    voxel value.
     """
     meta = {
         "Segmentation_MasterRepresentation": "Binary labelmap",

@@ -1,9 +1,8 @@
-"""Dispatcher honesty (``cli_list.processCLI``) -- runs fully offline.
+"""Tests for ``cli_list.processCLI`` dispatch and error handling.
 
 The dispatcher is the seam between ``girder_worker`` and each CLI script. Two
-pins live here: an unknown CLI name fails LOUDLY (non-zero exit + stderr), and
-the child's exit code is PROPAGATED so a crashed CLI marks the job failed rather
-than silently succeeding with no outputs. ``--list_cli`` output is unchanged.
+important behaviors are that unknown CLI names fail with an error and child exit
+codes propagate to the caller.
 """
 import sys
 

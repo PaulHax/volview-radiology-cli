@@ -1,18 +1,11 @@
 """Masked median filter -- background ``<image>`` + ``<image type="label">`` mask.
 
-Chunk 16's labelmap-consuming CLI. It fetches TWO inputs -- a scalar background
-volume and a painted labelmap -- runs an ITK median filter over the background,
-and composites the filtered result back only where the labelmap is nonzero;
-voxels outside the mask keep their original values. The output is a plain image,
-so the facade maps it to the ``add-base-image`` result intent and it loads back
-into VolView as a new base image.
-
-Input assembly (multi-slice DICOM -> one correctly spaced volume) and the v1 b3
-Girder fetch both live in the shared ``volview_cli_base`` package; the masked
-composite is the pure-numpy ``volview_cli_base.masked`` primitive. The
-background is cast to scalar float (the filter domain); the labelmap keeps its
-native integer label values (never ``to_scalar_float``'d) so a nonzero-label
-mask is exact. Uses real ITK (the ``itk`` package), per D10.
+The CLI reads a scalar background volume and a painted labelmap, runs an ITK
+median filter over the background, and keeps the filtered result only where the
+labelmap is nonzero. Voxels outside the mask keep their original values. The
+output is a plain image,
+into VolView as a new base image. The background is cast to scalar float, while
+the labelmap retains its integer values so every nonzero label is selected.
 """
 
 import os
