@@ -20,14 +20,40 @@ docker build -t volview-radiology-cli:latest .
 docker run --rm volview-radiology-cli:latest --list_cli
 ```
 
+## Published image
+
+Release tags publish the image to the GitHub Container Registry. A tag such as
+`v0.1.0` produces `ghcr.io/paulhax/volview-radiology-cli:0.1.0` and `:latest`.
+Pull an immutable version for a deployment:
+
+```sh
+docker pull ghcr.io/paulhax/volview-radiology-cli:0.1.0
+```
+
+The package must be public for anonymous pulls. If it is private, configure the
+DSA Docker credentials before provisioning.
+
 ## Use with Girder-VolView
 
-Clone this repository locally, set `CLI_REPO` in the Girder-VolView
+For a durable DSA installation, add the published image to the deployment's
+provision YAML and re-run provisioning:
+
+```yaml
+slicer-cli-image:
+  - ghcr.io/paulhax/volview-radiology-cli:0.1.0
+```
+
+See the Girder-VolView
+[custom Slicer CLI guide](https://github.com/DigitalSlideArchive/girder_volview/blob/slicer-cli-docs/docs/custom-slicer-clis.md)
+for the full authoring, verification, registry, and private-image workflow.
+
+For local development without a registry, clone this repository, set `CLI_REPO`
+in the Girder-VolView
 development-stack `.env` file to that checkout, then run `script/deploy` (or
 `script/ensure-radiology-cli`). The script builds the local image when needed
 and registers its declared tasks with `slicer_cli_web`.
 
-See the [Girder-VolView development documentation](https://github.com/PaulHax/girder_volview/blob/just-jobs/docs/development.md#radiology-cli-task-image)
+See the [Girder-VolView development documentation](https://github.com/DigitalSlideArchive/girder_volview/blob/slicer-cli-docs/docs/admin.md#local-reference-image)
 for the complete setup.
 
 ## Creating a CLI
