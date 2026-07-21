@@ -12,6 +12,7 @@ interface:
 - Threshold Segmentation
 - Median Filter
 - Masked Median Filter
+- Region of Interest Report
 
 ## Build and inspect
 
@@ -84,6 +85,21 @@ pytest -q
 With `CLI_REPO` pointed at this checkout, the Girder-VolView
 `script/ensure-radiology-cli` command rebuilds the image when needed and
 registers every task declared in `cli_list.json`.
+
+## Region of Interest report
+
+The **Region of Interest Report** task accepts a scalar integer label map and
+returns a downloadable CSV. Zero is treated as background; every distinct
+nonzero value produces one row containing the region name, label value, voxel
+count, voxel volume, and total volume in cubic millimetres and millilitres.
+
+For `.seg.nrrd` inputs, embedded Slicer segment names are used. Other label-map
+formats receive deterministic names such as `Region 1`. The calculation depends
+only on label values, image spacing, and optional embedded segment names.
+
+Rulers are not included because they are stored in the VolView session manifest,
+not in the label map passed to a Slicer CLI. Supporting them requires a separate
+serialized annotation input from Girder-VolView.
 
 ## DICOM slice inputs
 

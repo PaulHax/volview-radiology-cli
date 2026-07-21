@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<executable>
+  <category>Radiology</category>
+  <title>Region of Interest Report</title>
+  <description>Summarize each nonzero region in a label map as a downloadable CSV containing its name, label value, voxel count, and physical volume.</description>
+  <version>0.1.0</version>
+  <license>MIT</license>
+  <contributor>VolView</contributor>
+  <parameters>
+    <label>Input and output</label>
+    <description>Label map and generated report.</description>
+    <image type="label" reference="_girder_id_">
+      <name>inputLabelmap</name>
+      <label>Input Label Map</label>
+      <channel>input</channel>
+      <description>A scalar integer label map. Zero is background and each nonzero value is one region of interest.</description>
+      <index>0</index>
+    </image>
+    <file fileExtensions=".csv">
+      <name>outputReport</name>
+      <label>Region of Interest Report</label>
+      <channel>output</channel>
+      <description>CSV report containing one row per nonzero label value.</description>
+      <index>1</index>
+    </file>
+  </parameters>
+  <parameters advanced="true">
+    <label>Girder API</label>
+    <description>Server access injected by slicer_cli_web; not shown to users.</description>
+    <string>
+      <name>girderApiUrl</name>
+      <longflag>girderApiUrl</longflag>
+      <label>Girder API URL</label>
+      <description>Girder API URL (injected by slicer_cli_web).</description>
+      <default></default>
+    </string>
+    <string>
+      <name>girderToken</name>
+      <longflag>girderToken</longflag>
+      <label>Girder Token</label>
+      <description>Girder token (injected by slicer_cli_web).</description>
+      <default></default>
+    </string>
+  </parameters>
+</executable>

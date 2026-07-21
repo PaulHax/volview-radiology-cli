@@ -8,6 +8,9 @@
   "OtsuSegmentation": {
     "type": "python"
   },
+  "RegionOfInterestReport": {
+    "type": "python"
+  },
   "ThresholdSegmentation": {
     "type": "python"
   }
