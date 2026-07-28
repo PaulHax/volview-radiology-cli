@@ -19,7 +19,7 @@
       <description>Input volume (DICOM, NIfTI, NRRD, MHA, etc.)</description>
       <index>0</index>
     </image>
-    <image type="label" fileExtensions=".seg.nrrd" reference="inputVolume">
+    <image type="label" fileExtensions=".seg.nrrd">
       <name>outputLabelmap</name>
       <label>Output Labelmap</label>
       <channel>output</channel>

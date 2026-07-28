@@ -19,7 +19,7 @@
       <description>Input volume (DICOM, NIfTI, NRRD, MHA, etc.)</description>
       <index>0</index>
     </image>
-    <image fileExtensions=".nii.gz" reference="inputVolume">
+    <image fileExtensions=".nii.gz">
       <name>outputVolume</name>
       <label>Output Volume</label>
       <channel>output</channel>
