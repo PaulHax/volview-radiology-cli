@@ -26,7 +26,7 @@
       <description>Labelmap selecting where to apply the filter (any nonzero label).</description>
       <index>1</index>
     </image>
-    <image fileExtensions=".nii.gz" reference="inputVolume">
+    <image fileExtensions=".nii.gz">
       <name>outputVolume</name>
       <label>Output Volume</label>
       <channel>output</channel>
