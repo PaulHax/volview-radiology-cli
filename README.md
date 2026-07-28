@@ -45,7 +45,7 @@ slicer-cli-image:
 ```
 
 See the Girder-VolView
-[custom Slicer CLI guide](https://github.com/DigitalSlideArchive/girder_volview/blob/slicer-cli-docs/docs/custom-slicer-clis.md)
+[custom Slicer CLI guide](https://github.com/DigitalSlideArchive/girder_volview/blob/main/docs/custom-slicer-clis.md)
 for the full authoring, verification, registry, and private-image workflow.
 
 For local development without a registry, clone this repository, set `CLI_REPO`
@@ -54,7 +54,7 @@ development-stack `.env` file to that checkout, then run `script/deploy` (or
 `script/ensure-radiology-cli`). The script builds the local image when needed
 and registers its declared tasks with `slicer_cli_web`.
 
-See the [Girder-VolView development documentation](https://github.com/DigitalSlideArchive/girder_volview/blob/slicer-cli-docs/docs/admin.md#local-reference-image)
+See the [Girder-VolView development documentation](https://github.com/DigitalSlideArchive/girder_volview/blob/main/docs/admin.md#local-reference-image)
 for the complete setup.
 
 ## Creating a CLI
