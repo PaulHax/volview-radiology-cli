@@ -1,25 +1,19 @@
-"""Measurements for the nonzero regions in a scalar label map."""
+"""What a scalar label map says about its regions, before any annotation.
 
-import csv
+The names and voxel volumes here are the half of the region report that needs
+only the label map. ``roi_rulers`` joins them to the rulers on the image and
+owns the CSV; keeping the two apart lets the volume half be tested without any
+annotation input.
+"""
+
 import math
 import re
-
-from volview_cli_base.paths import ensure_parent_directory
-
-
-CSV_COLUMNS = (
-    "region_of_interest",
-    "label_value",
-    "voxel_count",
-    "voxel_volume_mm3",
-    "volume_mm3",
-    "volume_ml",
-)
 
 _SEGMENT_FIELD = re.compile(r"^Segment(\d+)_(LabelValue|Name)$")
 
 
-def _format_float(value):
+def format_float(value):
+    """A CSV number: six decimals with trailing zeros trimmed."""
     return f"{float(value):.6f}".rstrip("0").rstrip(".")
 
 
@@ -45,8 +39,8 @@ def segment_names(metadata):
     return names
 
 
-def report_rows(label_array, spacing, metadata=None):
-    """Describe each nonzero integer value in ``label_array``.
+def voxel_summary(label_array, spacing):
+    """``(voxel counts by nonzero label value, one voxel's volume in mm^3)``.
 
     ``spacing`` is in millimetres and follows the image axes. The array may use
     the reverse storage-axis order; voxel volume is invariant to axis order.
@@ -63,45 +57,20 @@ def report_rows(label_array, spacing, metadata=None):
             "label map dimension does not match spacing: %d dimensions, %d values"
             % (array.ndim, len(spacings))
         )
-    voxel_volume = math.prod(spacings)
-    names = segment_names(metadata)
+
     values, counts = np.unique(array, return_counts=True)
-
-    rows = []
-    for raw_value, raw_count in zip(values, counts):
-        value = int(raw_value)
-        if value == 0:
-            continue
-        count = int(raw_count)
-        volume = count * voxel_volume
-        rows.append(
-            {
-                "region_of_interest": names.get(value, f"Region {value}"),
-                "label_value": str(value),
-                "voxel_count": str(count),
-                "voxel_volume_mm3": _format_float(voxel_volume),
-                "volume_mm3": _format_float(volume),
-                "volume_ml": _format_float(volume / 1000.0),
-            }
-        )
-    return rows
-
-
-def write_csv(rows, output_path):
-    """Write report rows to ``output_path``, including the header when empty."""
-    ensure_parent_directory(output_path)
-    with open(output_path, "w", encoding="utf-8", newline="") as output:
-        writer = csv.DictWriter(output, fieldnames=CSV_COLUMNS)
-        writer.writeheader()
-        writer.writerows(rows)
+    counts_by_value = {
+        int(value): int(count)
+        for value, count in zip(values, counts)
+        if int(value) != 0
+    }
+    return counts_by_value, math.prod(spacings)
 
 
 def image_metadata(image):
     """Convert an ITK image metadata dictionary to ordinary strings."""
     dictionary = image.GetMetaDataDictionary()
     keys = (
-        dictionary.GetKeys()
-        if hasattr(dictionary, "GetKeys")
-        else dictionary.keys()
+        dictionary.GetKeys() if hasattr(dictionary, "GetKeys") else dictionary.keys()
     )
     return {str(key): str(dictionary[key]) for key in keys}

@@ -3,7 +3,8 @@ import pytest
 
 itk = pytest.importorskip("itk")
 
-from volview_cli_base.roi_report import image_metadata, report_rows  # noqa: E402
+from volview_cli_base.roi_report import image_metadata, voxel_summary  # noqa: E402
+from volview_cli_base.roi_rulers import labelmap_segments, segment_rows  # noqa: E402
 from volview_cli_base.segnrrd import write_segmentation  # noqa: E402
 
 
@@ -19,14 +20,16 @@ def test_embedded_segment_name_and_spacing_round_trip(tmp_path):
     )
 
     restored = itk.imread(path)
-    rows = report_rows(
-        itk.array_view_from_image(restored),
-        restored.GetSpacing(),
-        image_metadata(restored),
+    counts, voxel_volume = voxel_summary(
+        itk.array_view_from_image(restored), restored.GetSpacing()
     )
+    segments = labelmap_segments(image_metadata(restored), list(counts))
+    rows = segment_rows(segments, {}, {}, counts, voxel_volume)
 
     assert len(rows) == 1
     assert rows[0]["region_of_interest"] == "Reviewed region"
     assert rows[0]["label_value"] == "4"
     assert rows[0]["voxel_count"] == "3"
+    assert rows[0]["voxel_volume_mm3"] == "3"
     assert rows[0]["volume_mm3"] == "9"
+    assert rows[0]["volume_ml"] == "0.009"
