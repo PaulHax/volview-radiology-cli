@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<executable>
+  <category>Radiology</category>
+  <title>Region of Interest Rulers</title>
+  <description>Measure every named region in a label map: add the long-axis and short-axis rulers a region does not already have, check the rulers that are there against the segment names, and return a downloadable CSV of the measurements and any problem found.</description>
+  <version>0.1.0</version>
+  <license>MIT</license>
+  <contributor>VolView</contributor>
+  <parameters>
+    <label>Input and output</label>
+    <description>Annotated volume, its regions, and the generated measurements.</description>
+    <image reference="_girder_id_">
+      <name>inputVolume</name>
+      <label>Input Volume</label>
+      <channel>input</channel>
+      <description>Volume the regions were painted on. Declared so the generated rulers come back onto this image; the measurement itself reads no pixels from it.</description>
+      <index>0</index>
+    </image>
+    <image type="label" reference="_girder_id_">
+      <name>inputLabelmap</name>
+      <label>Input Label Map</label>
+      <channel>input</channel>
+      <description>A scalar integer label map. Zero is background and each nonzero value is one region of interest. Embedded .seg.nrrd segment names are the region names the rulers are labeled with.</description>
+      <index>1</index>
+    </image>
+    <file fileExtensions=".annotations.json" reference="inputVolume">
+      <name>outputAnnotations</name>
+      <label>Output Annotations</label>
+      <channel>output</channel>
+      <description>One long-axis and one short-axis ruler for each region that did not already have them. Regions whose rulers exist are left alone.</description>
+      <index>2</index>
+    </file>
+    <file fileExtensions=".csv">
+      <name>outputReport</name>
+      <label>Region of Interest Report</label>
+      <channel>output</channel>
+      <description>CSV report with one row per region, carrying its volume, its two measurements, whether each was found or generated, and any problem detected.</description>
+      <index>3</index>
+    </file>
+  </parameters>
+  <parameters>
+    <label>Existing annotations</label>
+    <description>The rulers already on the image, which this task checks and preserves.</description>
+    <file fileExtensions=".annotations.json" reference="_girder_id_">
+      <name>inputAnnotations</name>
+      <label>Input Annotations</label>
+      <channel>input</channel>
+      <longflag>inputAnnotations</longflag>
+      <description>Rulers already placed on the input volume. Optional on purpose: an image whose regions carry no rulers yet is this task's starting case, and VolView binds an annotations input only once the image has a finished annotation.</description>
+      <default></default>
+    </file>
+  </parameters>
+  <parameters advanced="true">
+    <label>Girder API</label>
+    <description>Server access injected by slicer_cli_web; not shown to users.</description>
+    <string>
+      <name>girderApiUrl</name>
+      <longflag>girderApiUrl</longflag>
+      <label>Girder API URL</label>
+      <description>Girder API URL (injected by slicer_cli_web).</description>
+      <default></default>
+    </string>
+    <string>
+      <name>girderToken</name>
+      <longflag>girderToken</longflag>
+      <label>Girder Token</label>
+      <description>Girder token (injected by slicer_cli_web).</description>
+      <default></default>
+    </string>
+  </parameters>
+</executable>

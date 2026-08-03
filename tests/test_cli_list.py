@@ -28,7 +28,7 @@ def test_list_cli_output_unchanged(monkeypatch, capsys):
         "OtsuSegmentation",
         "ThresholdSegmentation",
         "MedianFilter",
-        "RegionOfInterestReport",
+        "RegionOfInterestRulers",
         "RulerToRectangle",
     ):
         assert task in out

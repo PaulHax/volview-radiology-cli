@@ -12,7 +12,7 @@ interface:
 - Threshold Segmentation
 - Median Filter
 - Masked Median Filter
-- Region of Interest Report
+- Region of Interest Rulers
 - Ruler to Rectangle
 
 ## Build and inspect
@@ -87,19 +87,74 @@ With `CLI_REPO` pointed at this checkout, the Girder-VolView
 `script/ensure-radiology-cli` command rebuilds the image when needed and
 registers every task declared in `cli_list.json`.
 
-## Region of Interest report
+## Region of Interest Rulers
 
-The **Region of Interest Report** task accepts a scalar integer label map and
-returns a downloadable CSV. Zero is treated as background; every distinct
-nonzero value produces one row containing the region name, label value, voxel
-count, voxel volume, and total volume in cubic millimetres and millilitres.
+The **Region of Interest Rulers** task finishes and checks a segment-group
+annotation in one run. It takes the painted label map and whatever rulers are
+already on the image, and returns two outputs: the rulers that were missing,
+applied back onto the image, and a downloadable CSV.
 
-For `.seg.nrrd` inputs, embedded Slicer segment names are used. Other label-map
-formats receive deterministic names such as `Region 1`. The calculation depends
-only on label values, image spacing, and optional embedded segment names.
+It replaces the earlier volume-only Region of Interest Report task, whose six
+region columns are the first six columns of this CSV.
 
-Rulers are not included because they are not in the label map. Vector
-annotations reach a CLI through their own input; see **Ruler to Rectangle**.
+### What it measures
+
+For each nonzero label value it finds the axial slice where the region is
+widest and measures two in-plane diameters there:
+
+- `LD` -- the longest chord across the region on that slice.
+- `SAD` -- the widest extent perpendicular to `LD` on that same slice.
+
+The axial slices are the ones stacked along the image axis nearest to
+superior-inferior, so a generated annotation's plane always aligns to an image
+axis even when the volume was acquired obliquely. That is what the client
+requires: it re-derives each tool's slice from `frameOfReference` and rejects
+the whole result if a plane is oblique.
+
+`LD` and `SAD` are label suffixes, not a claim about what the regions are. They
+are ordinary planar shape descriptors, and the same convention serves any label
+map whose segments are named.
+
+### What it generates, and what it leaves alone
+
+Rulers are labeled `<segment name> <kind>`, as in `n2 LD` and `n2 SAD`.
+Embedded `.seg.nrrd` segment names supply the region names; other label-map
+formats receive deterministic names such as `Region 1`.
+
+A region that already carries a ruler for a measurement keeps it. Nothing
+already placed is regenerated, moved, or replaced, so re-running the task after
+an annotator has filled in the gaps generates nothing and only re-reports. The
+output is additive and carries only the rulers this run created; input tools
+are never echoed. A label the input file already defines keeps its own style,
+so a re-run never restyles an annotator's labels.
+
+### What it checks
+
+The CSV reports one row per painted region and one row per ruler no region
+claims. The `warnings` column names what was found:
+
+| Warning                  | Meaning                                                     |
+| ------------------------ | ----------------------------------------------------------- |
+| `no_matching_segment`    | A ruler's label names no painted segment -- a typo, or a region never painted. |
+| `unparsed_ruler_label`   | A ruler's label is not a measurement at all.                |
+| `ld_count=N`/`sad_count=N` | A region carries more than one ruler for one measurement. |
+| `duplicate_segment_name` | Two segments answer to one name, so every ruler naming it is ambiguous. |
+| `zero_volume`            | A named segment has no voxels.                              |
+| `no_ld`/`no_sad`         | A measurement is neither placed nor derivable.              |
+
+The audit accepts the separators seen in hand-annotated sessions and is
+case-insensitive on the kind, so an existing `n2-ld` still joins to segment
+`n2` rather than being reported as an orphan.
+
+### Running it without any annotations
+
+The annotations input is declared with a `<longflag>` rather than an `<index>`,
+which makes it optional. This is deliberate: an image whose regions carry no
+rulers yet is the task's primary case, and VolView binds an annotations input
+only once the image has a finished annotation. An indexed -- and therefore
+required -- input would make the form refuse to run in exactly that case. An
+absent argument means "nothing placed yet", a starting state rather than an
+error.
 
 ## Ruler to Rectangle
 
