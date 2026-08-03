@@ -2,8 +2,9 @@
 
 import csv
 import math
-import os
 import re
+
+from volview_cli_base.paths import ensure_parent_directory
 
 
 CSV_COLUMNS = (
@@ -88,9 +89,7 @@ def report_rows(label_array, spacing, metadata=None):
 
 def write_csv(rows, output_path):
     """Write report rows to ``output_path``, including the header when empty."""
-    parent = os.path.dirname(str(output_path))
-    if parent:
-        os.makedirs(parent, exist_ok=True)
+    ensure_parent_directory(output_path)
     with open(output_path, "w", encoding="utf-8", newline="") as output:
         writer = csv.DictWriter(output, fieldnames=CSV_COLUMNS)
         writer.writeheader()

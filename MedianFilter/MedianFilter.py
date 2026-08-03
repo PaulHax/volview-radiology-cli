@@ -8,7 +8,6 @@ import os
 import sys
 
 import itk
-from slicer_cli_web import CLIArgumentParser
 
 # The shared base package lives at the repo root (one level above this CLI's
 # own directory); make it importable when slicer_cli_web runs the script by
@@ -16,6 +15,7 @@ from slicer_cli_web import CLIArgumentParser
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from volview_cli_base.assemble import assemble, write_image  # noqa: E402
+from volview_cli_base.cli import run  # noqa: E402
 from volview_cli_base.girder_input import (  # noqa: E402
     resolve_girder_credentials,
     resolve_inputs_to_local_paths,
@@ -44,9 +44,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 2 and sys.argv[1] == "--xml":
-        xml_spec = os.path.splitext(sys.argv[0])[0] + ".xml"
-        with open(xml_spec) as f:
-            print(f.read())
-        sys.exit(0)
-    main(CLIArgumentParser().parse_args())
+    run(main)

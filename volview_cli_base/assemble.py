@@ -16,6 +16,8 @@ import os
 
 import itk
 
+from volview_cli_base.paths import ensure_parent_directory
+
 # float32: exact for the int16 Hounsfield range typical of CT and general for
 # any scalar acquisition, so the series path never needs a fragile per-file
 # component-type sniff to stay lossless.
@@ -125,7 +127,5 @@ def to_scalar_float(image):
 
 def write_image(image, path):
     """Write ``image`` to ``path``, creating parent directories, compressed."""
-    directory = os.path.dirname(str(path))
-    if directory:
-        os.makedirs(directory, exist_ok=True)
+    ensure_parent_directory(path)
     itk.imwrite(image, str(path), compression=True)
