@@ -13,6 +13,7 @@ interface:
 - Median Filter
 - Masked Median Filter
 - Region of Interest Report
+- Ruler to Rectangle
 
 ## Build and inspect
 
@@ -97,9 +98,35 @@ For `.seg.nrrd` inputs, embedded Slicer segment names are used. Other label-map
 formats receive deterministic names such as `Region 1`. The calculation depends
 only on label values, image spacing, and optional embedded segment names.
 
-Rulers are not included because they are stored in the VolView session manifest,
-not in the label map passed to a Slicer CLI. Supporting them requires a separate
-serialized annotation input from Girder-VolView.
+Rulers are not included because they are not in the label map. Vector
+annotations reach a CLI through their own input; see **Ruler to Rectangle**.
+
+## Ruler to Rectangle
+
+The **Ruler to Rectangle** task uses each ruler's endpoints as the opposite
+corners of a rectangle. It omits source annotations because outputs are
+additive.
+
+The Slicer Execution Model has no vector-annotation element, so both sides are
+`<file>` parameters whose `fileExtensions` declares `.annotations.json`. That
+declaration is the only signal Girder-VolView reads: an input so declared is
+bound to the annotations on the active image, and an output so declared is
+applied back onto it.
+
+The file is a versioned envelope whose coordinates are world LPS millimetres,
+never image indices. `volview_cli_base.annotations` reads and writes it,
+fail-closed: an unrecognized `schemaVersion` or `space`, a tool without a frame
+of reference, a session-only field such as `id` or `color`, or a label name that
+its tool kind's namespace does not declare all reject the whole file. The
+normative definition is the `volview` package's backend contract, and the
+Girder-VolView
+[custom Slicer CLI guide](https://github.com/DigitalSlideArchive/girder_volview/blob/slicer-cli-docs/docs/custom-slicer-clis.md)
+documents the format for authors.
+The Python checks here are only a small runtime guard for clear job failures;
+they are not a second contract authority, and format changes begin in VolView.
+
+Rectangle edges follow the referenced image's in-plane axes. Use a polygon for
+a rotated box.
 
 ## DICOM slice inputs
 
