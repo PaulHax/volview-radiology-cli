@@ -107,6 +107,26 @@ def test_resolve_single_id(tmp_path):
     assert len(out) == 1 and os.path.exists(out[0])
 
 
+def test_download_name_cannot_escape_the_destination_directory(tmp_path):
+    # The name comes from the server, and os.path.join walks out of dest_dir
+    # when it contains separators (a leading ".." also eats the "<id>__"
+    # prefix), so the download destination must stay a child of dest_dir.
+    fid = "6600000000000000000000d4"
+    client = _FakeClient(names={fid: "../../../../etc/cron.d/pwn"})
+    dest = tmp_path / "dl"
+    out = gi.resolve_inputs_to_local_paths(fid, client=client, dest_dir=str(dest))
+    assert os.path.dirname(os.path.realpath(out[0])) == os.path.realpath(str(dest))
+    assert os.path.basename(out[0]) == "%s__pwn" % fid
+
+
+def test_download_name_of_only_separators_falls_back_to_the_id(tmp_path):
+    fid = "6600000000000000000000d5"
+    client = _FakeClient(names={fid: "../.."})
+    dest = tmp_path / "dl"
+    out = gi.resolve_inputs_to_local_paths(fid, client=client, dest_dir=str(dest))
+    assert os.path.basename(out[0]) == "%s__%s" % (fid, fid)
+
+
 def test_resolve_empty_value_fails_closed():
     with pytest.raises(ValueError):
         gi.resolve_inputs_to_local_paths("")

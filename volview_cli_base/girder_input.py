@@ -67,6 +67,17 @@ def _make_client(api_url, token):
     return client
 
 
+def _safe_name(name, fallback):
+    """Collapse a server-reported file name to a single path token.
+
+    Remote names are joined to ``dest_dir``, so keep only the last path segment
+    and strip edge dots/spaces before use.
+    """
+    name = str(name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    name = name.strip(". ")
+    return name or fallback
+
+
 def _download_one(client, file_id, dest_dir):
     """Download a single Girder file, preserving its name (prefixed by id for
     uniqueness). DICOM ordering is by header, so the on-disk name is cosmetic.
@@ -79,7 +90,9 @@ def _download_one(client, file_id, dest_dir):
         # No metadata -> fall back to the id as the name; the download below is
         # the operation that actually matters.
         pass
-    local_path = os.path.join(dest_dir, "%s__%s" % (file_id, name))
+    local_path = os.path.join(
+        dest_dir, "%s__%s" % (file_id, _safe_name(name, file_id))
+    )
     client.downloadFile(file_id, local_path)
     return local_path
 
