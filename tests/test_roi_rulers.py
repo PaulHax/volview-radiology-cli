@@ -262,17 +262,13 @@ def test_two_segments_sharing_a_name_are_flagged():
 def test_a_ruler_naming_no_segment_becomes_its_own_row():
     existing = {("n9", "LD"): [ruler("n9 LD", [0, 0, 0], [3, 4, 0])]}
 
-    rows = orphan_rows(
-        INPUT_IMAGE_PATH, existing, ["scratch"], named_segments={"n2"}
-    )
+    rows = orphan_rows(INPUT_IMAGE_PATH, existing, ["scratch"], named_segments={"n2"})
 
     orphan = rows_by_region(rows)["n9"]
     assert orphan["input_image_path"] == INPUT_IMAGE_PATH
     assert orphan["ld_length_mm"] == "5"
     assert orphan["volume_mm3"] == ""
-    assert orphan["warnings"] == (
-        "Ruler label 'n9 LD' does not match any segmentation label."
-    )
+    assert orphan["warnings"] == "No segmentation label matches 'n9 LD'."
 
     unparsed = rows_by_region(rows)["scratch"]
     assert unparsed["warnings"] == (

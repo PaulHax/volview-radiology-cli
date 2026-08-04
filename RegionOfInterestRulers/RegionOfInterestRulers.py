@@ -45,10 +45,9 @@ from volview_cli_base.roi_rulers import (  # noqa: E402
 def read_input_annotations(value, api_url, token):
     """The annotations file, or an empty one when the parameter is unbound.
 
-    The input is optional on purpose: an image whose regions carry no rulers
-    yet is this task's primary case, and VolView binds an annotations input
-    only once the image has a finished annotation. An absent argument therefore
-    means "nothing placed yet", a starting state rather than an error.
+    An absent argument means "nothing placed yet", the task's starting case,
+    not an error: VolView binds an annotations input only once the image has a
+    finished annotation.
     """
     if not str(value or "").strip():
         return {"schemaVersion": SCHEMA_VERSION, "space": SPACE, "tools": {}}

@@ -1,33 +1,23 @@
 """Derive, audit, and report the in-plane diameters of a label map's regions.
 
-An annotator paints one segment per region of interest and names it. The
-measurements that belong beside it are two rulers: the region's longest
-in-plane diameter (LD) and its widest extent perpendicular to that diameter
-(SAD), both on the slice where the region is widest.
+Each painted segment gets two rulers: the region's longest in-plane diameter
+(LD) and its widest extent perpendicular to that diameter (SAD), both on the
+slice where the region is widest. This module derives the rulers a region is
+missing, joins them to the ones an annotator already placed, and reports both.
 
-This module derives those rulers from the label map, joins them to the rulers
-an annotator already placed, and reports both together. Three rules keep the
-job idempotent and leave the annotator in charge:
+Rulers already placed are never regenerated or moved, and a ruler whose label
+names no segment is reported rather than dropped. Generated rulers ride the
+image axis nearest to superior-inferior, so their plane always aligns to an
+axis of the referenced image. ``LD`` and ``SAD`` are label suffixes, not a
+claim about what the regions are; the measurements are ordinary planar shape
+descriptors.
 
-- A region that already carries a ruler for a measurement keeps it. Nothing
-  already placed is regenerated, moved, or replaced.
-- A ruler whose label names no segment is never silently dropped; it is
-  reported as a finding, because a misnamed ruler is the defect this job
-  exists to catch.
-- Geometry stays in the label map's own frame. Generated rulers ride the image
-  axis nearest to superior-inferior, so an annotation's plane always aligns to
-  an axis of the referenced image, which the client requires.
-
-``LD`` and ``SAD`` are the label suffixes, not a claim about what the regions
-are: the measurements are ordinary planar shape descriptors and the same
-convention serves any label map whose segments are named.
-
-``itk`` is imported lazily, inside the handful of functions that turn voxel
-indices into world points, so the planar measurement and the report stay
-usable -- and testable -- without loading ITK.
+``itk`` is imported lazily so the planar measurement and the report stay
+testable without it.
 """
 
 import math
+from collections import Counter
 
 from volview_cli_base.annotations import SCHEMA_VERSION, SPACE
 from volview_cli_base.paths import ensure_parent_directory
@@ -37,11 +27,9 @@ LD = "LD"
 SAD = "SAD"
 MEASUREMENT_KINDS = (LD, SAD)
 
-# The label an analyst reads and the report joins on: a segment name, a
-# separator, and the measurement kind. Generation always writes a space; the
-# audit also accepts the separators seen in hand-annotated sessions, so an
-# existing ``n2-ld`` still joins to segment ``n2`` rather than being reported
-# as an orphan.
+# A label joins a segment name to a measurement kind. Generation always writes
+# a space; the audit also accepts the separators seen in hand-annotated
+# sessions.
 _LABEL_SEPARATORS = " _-:"
 
 # Styles for the labels this task creates. An input file that already defines a
@@ -51,7 +39,6 @@ GENERATED_LABEL_STYLES = {
     SAD: {"color": "#40c4ff", "strokeWidth": 2},
 }
 
-# One compact row per region of interest, matching the analyst-facing report.
 CSV_COLUMNS = (
     "input_image_path",
     "roi_name",
@@ -75,9 +62,8 @@ def measurement_label(segment_name, kind):
 def parse_measurement_label(label_name):
     """Split ``"n2 LD"`` into ``("n2", "LD")``, or ``None`` if it is not one.
 
-    Matching is case-insensitive on the kind and tolerant of the separator, so
-    ``n2-ld`` and ``N2: sad`` both join. A name that merely ends in the letters
-    (``"WELD"``) does not: a separator is required.
+    Case-insensitive on the kind and tolerant of the separator, so ``n2-ld``
+    and ``N2: sad`` both join. A separator is required, so ``"WELD"`` does not.
     """
     label = str(label_name or "").strip()
     upper = label.upper()
@@ -94,20 +80,15 @@ def parse_measurement_label(label_name):
 
 
 def ruler_label(ruler):
-    """The name to audit a ruler by.
-
-    ``labelName`` is the shared label an annotator assigns and the analyst's
-    report joins on; a per-tool ``name`` is the fallback for a ruler renamed
-    individually.
-    """
+    """The name to audit by: the shared ``labelName``, else the per-tool ``name``."""
     return str(ruler.get("labelName") or ruler.get("name") or "")
 
 
 def index_existing_rulers(annotations):
     """Group an annotations file's rulers by the measurement they claim.
 
-    Returns ``({(segment_name, kind): [ruler, ...]}, [unparsed_label, ...])``.
-    Every ruler lands in exactly one of the two, so nothing is dropped.
+    Returns ``({(segment_name, kind): [ruler, ...]}, [unparsed_label, ...])``;
+    every ruler lands in exactly one of the two, so nothing is dropped.
     """
     tools = (annotations or {}).get("tools") or {}
     by_measurement = {}
@@ -139,10 +120,8 @@ def axial_image_axis(direction):
     """The image axis whose direction is nearest to the LPS superior axis.
 
     ``direction`` is the 3x3 matrix whose column ``j`` is image axis ``j``'s
-    unit direction in LPS, so row 2 holds each axis' superior component. The
-    axial slices of an obliquely acquired volume are the ones stacked along
-    this axis, which keeps a generated annotation's plane aligned to an image
-    axis even when the volume is not perfectly axial.
+    unit direction in LPS, so row 2 holds each axis' superior component. Axial
+    slices stack along this axis even when the volume is not perfectly axial.
     """
     return max(range(3), key=lambda axis: abs(float(direction[2][axis])))
 
@@ -150,23 +129,21 @@ def axial_image_axis(direction):
 def _hull_candidates(rows, columns):
     """The per-row extreme points, a superset of the convex hull's vertices.
 
-    A point lying strictly between two others in its own row is inside their
+    A point strictly between two others in its own row lies inside their
     segment, so it can never be an extreme point in any direction. Keeping only
-    each row's first and last column therefore preserves every hull vertex --
-    and so the longest chord's endpoints -- while bounding the pairwise search
-    to two points per row.
+    each row's first and last column preserves the longest chord's endpoints
+    while bounding the pairwise search to two points per row.
     """
     import numpy as np
 
     order = np.lexsort((columns, rows))
     ordered_rows = rows[order]
-    starts = np.empty(ordered_rows.shape, dtype=bool)
-    ends = np.empty(ordered_rows.shape, dtype=bool)
-    starts[0] = ends[-1] = True
-    changed = ordered_rows[1:] != ordered_rows[:-1]
-    starts[1:] = changed
-    ends[:-1] = changed
-    keep = order[starts | ends]
+    first_in_row = np.empty(ordered_rows.shape, dtype=bool)
+    first_in_row[0] = True
+    first_in_row[1:] = ordered_rows[1:] != ordered_rows[:-1]
+    # Each row's last point is the one before the next row's first, and the
+    # final point is always a last -- exactly what rolling left produces.
+    keep = order[first_in_row | np.roll(first_in_row, -1)]
     return rows[keep], columns[keep]
 
 
@@ -204,8 +181,7 @@ def _perpendicular_extent(points_mm, start_mm, end_mm, step_mm):
     across = relative @ across_axis
 
     bin_count = max(1, int(math.ceil(length / step_mm)))
-    edges = np.linspace(0.0, length, bin_count + 1)
-    bins = np.clip(np.searchsorted(edges, along, side="right") - 1, 0, bin_count - 1)
+    bins = np.clip((along * bin_count / length).astype(int), 0, bin_count - 1)
 
     widest = 0.0
     endpoints = (None, None)
@@ -322,9 +298,8 @@ def world_point(labelmap, array_index):
 def frame_of_reference(labelmap, slice_axis, slice_index):
     """The plane a generated ruler sits in, aligned to an image axis.
 
-    ``planeNormal`` is the slice axis' own direction, so the client can always
-    match the plane to an image axis rather than rejecting it as oblique;
-    ``planeOrigin`` is a point on that slice.
+    ``planeNormal`` is the slice axis' own direction, so the plane is never
+    oblique to the image; ``planeOrigin`` is a point on that slice.
     """
     import itk
 
@@ -367,9 +342,8 @@ def generated_ruler(labelmap, slice_axis, in_plane_axes, measurement, kind, labe
 def build_output_annotations(rulers, styles_by_label, input_annotations):
     """The additive result: only the rulers this run generated.
 
-    Input tools are not echoed because annotation results are additive. A label
-    the input file already defines keeps its own style, so a re-run never
-    restyles an annotator's labels.
+    A label the input file already defines keeps its own style, so a re-run
+    never restyles an annotator's labels.
     """
     result = {
         "schemaVersion": SCHEMA_VERSION,
@@ -393,19 +367,26 @@ def build_output_annotations(rulers, styles_by_label, input_annotations):
 # ---------------------------------------------------------------------------
 
 
-def _joined(values):
-    return ";".join(str(value) for value in values if value != "")
+def _lengths_mm(rulers):
+    """The CSV cell for one or more rulers' world lengths."""
+    return ";".join(format_float(ruler_length_mm(ruler) or 0.0) for ruler in rulers)
+
+
+def _report_row(input_image_path, roi_name):
+    """A blank report row, ready for whichever cells the caller fills in."""
+    row = dict.fromkeys(CSV_COLUMNS, "")
+    row["input_image_path"] = input_image_path
+    row["roi_name"] = roi_name
+    return row
 
 
 def labelmap_segments(metadata, present_values):
     """``[(segment name, label value)]`` for the label map's painted segments.
 
     Embedded ``.seg.nrrd`` segment names are the region IDs the report joins
-    on. A value the metadata does not name still gets an entry under a
-    deterministic name, matching the region report's fallback, so an unnamed
-    segment is visible rather than absent. A list rather than a mapping: two
-    segments may answer to one name, and collapsing them would hide exactly the
-    defect this job reports.
+    on; a value the metadata does not name falls back to a deterministic one.
+    A list rather than a mapping, because two segments may answer to one name
+    and collapsing them would hide exactly the defect this job reports.
     """
     names = segment_names(metadata)
     return [
@@ -424,19 +405,14 @@ def segment_rows(
     segment whose label map has no voxels still gets a row, because a silently
     absent region is the report's most important finding.
     """
-    duplicated = {
-        name
-        for index, (name, _) in enumerate(segments)
-        if any(earlier == name for earlier, _ in segments[:index])
-    }
+    name_counts = Counter(name for name, _ in segments)
 
     rows = []
     for segment_name, label_value in segments:
         measurement = measurements.get(label_value)
         voxel_count = voxel_counts.get(label_value, 0)
-        volume_mm3 = voxel_count * voxel_volume_mm3
         warnings = []
-        if segment_name in duplicated:
+        if name_counts[segment_name] > 1:
             # Two segments answering to one name make every ruler naming it
             # ambiguous, so the join below is reported rather than trusted.
             warnings.append(
@@ -446,11 +422,8 @@ def segment_rows(
         if not voxel_count:
             warnings.append("Segmentation label %r has no voxels." % segment_name)
 
-        row = {
-            "input_image_path": input_image_path,
-            "roi_name": segment_name,
-            "volume_mm3": format_float(volume_mm3),
-        }
+        row = _report_row(input_image_path, segment_name)
+        row["volume_mm3"] = format_float(voxel_count * voxel_volume_mm3)
         for kind in MEASUREMENT_KINDS:
             column = kind.lower()
             rulers = existing.get((segment_name, kind)) or []
@@ -460,13 +433,10 @@ def segment_rows(
                     % (len(rulers), kind, segment_name)
                 )
             if rulers:
-                row[column + "_length_mm"] = _joined(
-                    format_float(ruler_length_mm(ruler) or 0.0) for ruler in rulers
-                )
+                row[column + "_length_mm"] = _lengths_mm(rulers)
             elif measurement is not None:
                 row[column + "_length_mm"] = format_float(measurement[column + "_mm"])
             else:
-                row[column + "_length_mm"] = ""
                 warnings.append(
                     "No %s ruler exists and one could not be generated for "
                     "segmentation label %r." % (kind, segment_name)
@@ -480,36 +450,22 @@ def segment_rows(
 def orphan_rows(input_image_path, existing, unparsed_labels, named_segments):
     """One row per ruler that no painted segment claims.
 
-    These are the annotation defects the job checks for: a ruler whose label
-    names no segment (a typo, or a region never painted) and a ruler whose
-    label is not a measurement at all.
+    Either a ruler whose label names no segment -- a typo, or a region never
+    painted -- or a ruler whose label is not a measurement at all.
     """
     rows = []
     for (segment_name, kind), rulers in sorted(existing.items()):
         if segment_name in named_segments:
             continue
-        row = dict.fromkeys(CSV_COLUMNS, "")
-        row["input_image_path"] = input_image_path
-        row["roi_name"] = segment_name
-        row[kind.lower() + "_length_mm"] = _joined(
-            format_float(ruler_length_mm(ruler) or 0.0) for ruler in rulers
+        row = _report_row(input_image_path, segment_name)
+        row[kind.lower() + "_length_mm"] = _lengths_mm(rulers)
+        row["warnings"] = "No segmentation label matches %s." % ", ".join(
+            repr(label) for label in sorted({ruler_label(ruler) for ruler in rulers})
         )
-        labels = sorted({ruler_label(ruler) for ruler in rulers})
-        if len(labels) == 1:
-            row["warnings"] = (
-                "Ruler label %r does not match any segmentation label." % labels[0]
-            )
-        else:
-            row["warnings"] = (
-                "Ruler labels %s do not match any segmentation label."
-                % ", ".join(repr(label) for label in labels)
-            )
         rows.append(row)
 
     for label in sorted(set(unparsed_labels)):
-        row = dict.fromkeys(CSV_COLUMNS, "")
-        row["input_image_path"] = input_image_path
-        row["roi_name"] = label
+        row = _report_row(input_image_path, label)
         row["warnings"] = (
             "Ruler label %r is not a recognized measurement label; expected "
             "'<segmentation label> LD' or '<segmentation label> SAD'." % label

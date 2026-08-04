@@ -13,7 +13,7 @@
       <name>inputVolume</name>
       <label>Input Volume</label>
       <channel>input</channel>
-      <description>Volume the regions were painted on. Declared so the generated rulers come back onto this image; the measurement itself reads no pixels from it.</description>
+      <description>Volume the regions were painted on. Declared so the generated rulers come back onto it; no pixels are read from it.</description>
       <index>0</index>
     </image>
     <image type="label" reference="_girder_id_">
@@ -46,7 +46,7 @@
       <label>Input Annotations</label>
       <channel>input</channel>
       <longflag>inputAnnotations</longflag>
-      <description>Rulers already placed on the input volume. Optional on purpose: an image whose regions carry no rulers yet is this task's starting case, and VolView binds an annotations input only once the image has a finished annotation.</description>
+      <description>Rulers already placed on the input volume. Optional: VolView binds this input only once the image has a finished annotation, and regions with no rulers yet are this task's starting case.</description>
       <default></default>
     </file>
   </parameters>
