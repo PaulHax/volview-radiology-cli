@@ -45,14 +45,24 @@ def test_classify_tokens_fails_closed_on_foreign_string():
 # --- orchestration with an injected fake client ---------------------------
 
 class _FakeClient:
-    """Mirrors the two girder_client methods the front-end uses."""
+    """Mirrors the girder_client methods the input helpers use."""
 
-    def __init__(self, names=None):
+    def __init__(self, names=None, item_path="/collection/study/scan"):
         self._names = names or {}
+        self.item_path = item_path
         self.downloaded = []
 
     def getFile(self, file_id):
-        return {"_id": file_id, "name": self._names.get(file_id, file_id + ".dcm")}
+        return {
+            "_id": file_id,
+            "itemId": "660000000000000000000099",
+            "name": self._names.get(file_id, file_id + ".dcm"),
+        }
+
+    def get(self, path, parameters=None):
+        assert path == "resource/660000000000000000000099/path"
+        assert parameters == {"type": "item"}
+        return self.item_path
 
     def downloadFile(self, file_id, path):
         with open(path, "wb") as fh:
@@ -141,6 +151,23 @@ def test_resolve_ids_without_api_url_fails_closed():
     # An id to fetch but no injected client and no api_url -> refuse, don't guess.
     with pytest.raises(ValueError):
         gi.resolve_inputs_to_local_paths("6600000000000000000000d1")
+
+
+def test_resolve_girder_item_path_from_a_bound_file_id():
+    client = _FakeClient(item_path="/collection/roi-study/scan-1")
+
+    path = gi.resolve_girder_item_path(
+        "6600000000000000000000d1", client=client
+    )
+
+    assert path == "/collection/roi-study/scan-1"
+
+
+def test_local_input_has_no_girder_item_path(tmp_path):
+    local = tmp_path / "volume.nrrd"
+    local.write_bytes(b"volume")
+
+    assert gi.resolve_girder_item_path(str(local)) == ""
 
 
 # --- credential extraction ------------------------------------------------

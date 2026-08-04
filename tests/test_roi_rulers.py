@@ -29,7 +29,10 @@ def ruler(label, first, second):
 
 
 def rows_by_region(rows):
-    return {row["region_of_interest"]: row for row in rows}
+    return {row["roi_name"]: row for row in rows}
+
+
+INPUT_IMAGE_PATH = "/collection/roi-study/scan-1"
 
 
 # ---------------------------------------------------------------------------
@@ -198,25 +201,25 @@ def test_existing_rulers_are_reported_and_never_regenerated():
     measurements = {1: {"slice": 4, "ld_mm": 99.0, "sad_mm": 88.0}}
     existing = {("n2", "LD"): [ruler("n2 LD", [0, 0, 0], [3, 4, 0])]}
 
-    rows = segment_rows(segments, measurements, existing, {1: 10}, 2.0)
+    rows = segment_rows(
+        INPUT_IMAGE_PATH, segments, measurements, existing, {1: 10}, 2.0
+    )
 
     row = rows[0]
     assert row["ld_length_mm"] == "5"  # the placed ruler, not the derived 99
-    assert row["ld_source"] == "existing"
     assert row["sad_length_mm"] == "88"
-    assert row["sad_source"] == "generated"
     assert row["volume_mm3"] == "20"
-    assert row["volume_ml"] == "0.02"
-    assert row["voxel_count"] == "10"
+    assert row["input_image_path"] == INPUT_IMAGE_PATH
+    assert row["roi_name"] == "n2"
     assert row["warnings"] == ""
 
 
 def test_a_region_with_no_voxels_is_reported_rather_than_dropped():
-    rows = segment_rows([("n2", 1)], {}, {}, {}, 1.0)
+    rows = segment_rows(INPUT_IMAGE_PATH, [("n2", 1)], {}, {}, {}, 1.0)
 
     row = rows[0]
-    assert row["voxel_count"] == "0"
-    assert row["ld_source"] == ""
+    assert row["volume_mm3"] == "0"
+    assert row["ld_length_mm"] == ""
     assert "Segmentation label 'n2' has no voxels." in row["warnings"]
     assert "No LD ruler exists" in row["warnings"]
     assert "No SAD ruler exists" in row["warnings"]
@@ -230,7 +233,12 @@ def test_duplicate_measurements_are_counted_as_a_warning():
         ]
     }
     rows = segment_rows(
-        [("n2", 1)], {1: {"slice": 0, "ld_mm": 1.0, "sad_mm": 1.0}}, existing, {1: 1}, 1.0
+        INPUT_IMAGE_PATH,
+        [("n2", 1)],
+        {1: {"slice": 0, "ld_mm": 1.0, "sad_mm": 1.0}},
+        existing,
+        {1: 1},
+        1.0,
     )
 
     assert rows[0]["ld_length_mm"] == "5;10"
@@ -242,7 +250,7 @@ def test_duplicate_measurements_are_counted_as_a_warning():
 
 def test_two_segments_sharing_a_name_are_flagged():
     segments = [("n2", 1), ("n2", 2)]
-    rows = segment_rows(segments, {}, {}, {1: 1, 2: 1}, 1.0)
+    rows = segment_rows(INPUT_IMAGE_PATH, segments, {}, {}, {1: 1, 2: 1}, 1.0)
 
     assert all(
         "Multiple segmentation labels are named 'n2'; ruler matching is ambiguous."
@@ -254,11 +262,14 @@ def test_two_segments_sharing_a_name_are_flagged():
 def test_a_ruler_naming_no_segment_becomes_its_own_row():
     existing = {("n9", "LD"): [ruler("n9 LD", [0, 0, 0], [3, 4, 0])]}
 
-    rows = orphan_rows(existing, ["scratch"], named_segments={"n2"})
+    rows = orphan_rows(
+        INPUT_IMAGE_PATH, existing, ["scratch"], named_segments={"n2"}
+    )
 
     orphan = rows_by_region(rows)["n9"]
+    assert orphan["input_image_path"] == INPUT_IMAGE_PATH
     assert orphan["ld_length_mm"] == "5"
-    assert orphan["label_value"] == ""
+    assert orphan["volume_mm3"] == ""
     assert orphan["warnings"] == (
         "Ruler label 'n9 LD' does not match any segmentation label."
     )
@@ -272,7 +283,7 @@ def test_a_ruler_naming_no_segment_becomes_its_own_row():
 
 def test_a_ruler_matching_a_painted_segment_is_not_an_orphan():
     existing = {("n2", "LD"): [ruler("n2 LD", [0, 0, 0], [1, 0, 0])]}
-    assert orphan_rows(existing, [], named_segments={"n2"}) == []
+    assert orphan_rows(INPUT_IMAGE_PATH, existing, [], named_segments={"n2"}) == []
 
 
 def test_csv_carries_the_declared_columns_and_a_header_when_empty(tmp_path):
@@ -286,14 +297,20 @@ def test_csv_carries_the_declared_columns_and_a_header_when_empty(tmp_path):
 def test_csv_round_trips_a_report(tmp_path):
     output = tmp_path / "report.csv"
     rows = segment_rows(
-        [("n2", 1)], {1: {"slice": 3, "ld_mm": 12.5, "sad_mm": 6.25}}, {}, {1: 4}, 1.0
+        INPUT_IMAGE_PATH,
+        [("n2", 1)],
+        {1: {"slice": 3, "ld_mm": 12.5, "sad_mm": 6.25}},
+        {},
+        {1: 4},
+        1.0,
     )
     write_csv(rows, output)
 
     with output.open(newline="", encoding="utf-8") as stream:
         written = list(csv.DictReader(stream))
 
-    assert written[0]["region_of_interest"] == "n2"
+    assert written[0]["input_image_path"] == INPUT_IMAGE_PATH
+    assert written[0]["roi_name"] == "n2"
     assert written[0]["ld_length_mm"] == "12.5"
-    assert written[0]["sad_source"] == "generated"
-    assert written[0]["slice"] == "3"
+    assert written[0]["sad_length_mm"] == "6.25"
+    assert list(written[0]) == list(CSV_COLUMNS)

@@ -51,24 +51,13 @@ GENERATED_LABEL_STYLES = {
     SAD: {"color": "#40c4ff", "strokeWidth": 2},
 }
 
-SOURCE_EXISTING = "existing"
-SOURCE_GENERATED = "generated"
-SOURCE_MISSING = ""
-
-# A superset of the volume-only report this task replaces: the same six region
-# columns, then the measurement each region carries and what was found wrong.
+# One compact row per region of interest, matching the analyst-facing report.
 CSV_COLUMNS = (
-    "region_of_interest",
-    "label_value",
-    "voxel_count",
-    "voxel_volume_mm3",
-    "volume_mm3",
-    "volume_ml",
+    "input_image_path",
+    "roi_name",
     "ld_length_mm",
-    "ld_source",
     "sad_length_mm",
-    "sad_source",
-    "slice",
+    "volume_mm3",
     "warnings",
 )
 
@@ -425,7 +414,9 @@ def labelmap_segments(metadata, present_values):
     ]
 
 
-def segment_rows(segments, measurements, existing, voxel_counts, voxel_volume_mm3):
+def segment_rows(
+    input_image_path, segments, measurements, existing, voxel_counts, voxel_volume_mm3
+):
     """One report row per painted segment, joined to the rulers it already has.
 
     ``segments`` is what ``labelmap_segments`` returns; ``measurements`` and
@@ -456,13 +447,9 @@ def segment_rows(segments, measurements, existing, voxel_counts, voxel_volume_mm
             warnings.append("Segmentation label %r has no voxels." % segment_name)
 
         row = {
-            "region_of_interest": segment_name,
-            "label_value": str(label_value),
-            "voxel_count": str(voxel_count),
-            "voxel_volume_mm3": format_float(voxel_volume_mm3),
+            "input_image_path": input_image_path,
+            "roi_name": segment_name,
             "volume_mm3": format_float(volume_mm3),
-            "volume_ml": format_float(volume_mm3 / 1000.0),
-            "slice": "" if measurement is None else str(measurement["slice"]),
         }
         for kind in MEASUREMENT_KINDS:
             column = kind.lower()
@@ -476,13 +463,10 @@ def segment_rows(segments, measurements, existing, voxel_counts, voxel_volume_mm
                 row[column + "_length_mm"] = _joined(
                     format_float(ruler_length_mm(ruler) or 0.0) for ruler in rulers
                 )
-                row[column + "_source"] = SOURCE_EXISTING
             elif measurement is not None:
                 row[column + "_length_mm"] = format_float(measurement[column + "_mm"])
-                row[column + "_source"] = SOURCE_GENERATED
             else:
                 row[column + "_length_mm"] = ""
-                row[column + "_source"] = SOURCE_MISSING
                 warnings.append(
                     "No %s ruler exists and one could not be generated for "
                     "segmentation label %r." % (kind, segment_name)
@@ -493,7 +477,7 @@ def segment_rows(segments, measurements, existing, voxel_counts, voxel_volume_mm
     return rows
 
 
-def orphan_rows(existing, unparsed_labels, named_segments):
+def orphan_rows(input_image_path, existing, unparsed_labels, named_segments):
     """One row per ruler that no painted segment claims.
 
     These are the annotation defects the job checks for: a ruler whose label
@@ -505,11 +489,11 @@ def orphan_rows(existing, unparsed_labels, named_segments):
         if segment_name in named_segments:
             continue
         row = dict.fromkeys(CSV_COLUMNS, "")
-        row["region_of_interest"] = segment_name
+        row["input_image_path"] = input_image_path
+        row["roi_name"] = segment_name
         row[kind.lower() + "_length_mm"] = _joined(
             format_float(ruler_length_mm(ruler) or 0.0) for ruler in rulers
         )
-        row[kind.lower() + "_source"] = SOURCE_EXISTING
         labels = sorted({ruler_label(ruler) for ruler in rulers})
         if len(labels) == 1:
             row["warnings"] = (
@@ -524,7 +508,8 @@ def orphan_rows(existing, unparsed_labels, named_segments):
 
     for label in sorted(set(unparsed_labels)):
         row = dict.fromkeys(CSV_COLUMNS, "")
-        row["region_of_interest"] = label
+        row["input_image_path"] = input_image_path
+        row["roi_name"] = label
         row["warnings"] = (
             "Ruler label %r is not a recognized measurement label; expected "
             "'<segmentation label> LD' or '<segmentation label> SAD'." % label

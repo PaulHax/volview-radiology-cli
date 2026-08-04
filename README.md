@@ -94,8 +94,10 @@ annotation in one run. It takes the painted label map and whatever rulers are
 already on the image, and returns two outputs: the rulers that were missing,
 applied back onto the image, and a downloadable CSV.
 
-It replaces the earlier volume-only Region of Interest Report task, whose six
-region columns are the first six columns of this CSV.
+The CSV stays compact for aggregation across scans: `input_image_path`,
+`roi_name`, `ld_length_mm`, `sad_length_mm`, `volume_mm3`, and `warnings`.
+`input_image_path` identifies the Girder item containing the durable input image
+or DICOM series; it never points at the temporary label-map or annotation inputs.
 
 ### What it measures
 

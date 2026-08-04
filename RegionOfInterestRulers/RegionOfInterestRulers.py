@@ -22,6 +22,7 @@ from volview_cli_base.assemble import assemble  # noqa: E402
 from volview_cli_base.cli import run  # noqa: E402
 from volview_cli_base.girder_input import (  # noqa: E402
     resolve_girder_credentials,
+    resolve_girder_item_path,
     resolve_inputs_to_local_paths,
 )
 from volview_cli_base.roi_report import image_metadata, voxel_summary  # noqa: E402
@@ -59,6 +60,9 @@ def read_input_annotations(value, api_url, token):
 
 def main(args):
     api_url, token = resolve_girder_credentials(args)
+    input_image_path = resolve_girder_item_path(
+        args.inputVolume, api_url=api_url, token=token
+    )
     labelmap_paths = resolve_inputs_to_local_paths(
         args.inputLabelmap, api_url=api_url, token=token
     )
@@ -101,8 +105,19 @@ def main(args):
         build_output_annotations(rulers, styles, annotations), args.outputAnnotations
     )
 
-    rows = segment_rows(segments, measurements, existing, voxel_counts, voxel_volume_mm3)
-    rows.extend(orphan_rows(existing, unparsed, {name for name, _ in segments}))
+    rows = segment_rows(
+        input_image_path,
+        segments,
+        measurements,
+        existing,
+        voxel_counts,
+        voxel_volume_mm3,
+    )
+    rows.extend(
+        orphan_rows(
+            input_image_path, existing, unparsed, {name for name, _ in segments}
+        )
+    )
     write_csv(rows, args.outputReport)
 
     print(
