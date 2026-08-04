@@ -1,4 +1,4 @@
-"""Read, write, and derive VolView ``*.annotations.json`` files.
+"""Read and write VolView ``*.annotations.json`` files.
 
 Coordinates are world LPS millimetres. Validation mirrors VolView's normative
 contract and excludes session-only fields.
@@ -214,65 +214,3 @@ def write_annotations(annotations, output_path):
     ensure_parent_directory(output_path)
     with open(output_path, "w", encoding="utf-8") as stream:
         stream.write(payload + "\n")
-
-
-# ---------------------------------------------------------------------------
-# Ruler -> rectangle
-# ---------------------------------------------------------------------------
-
-RECTANGLE_LABEL_NAME = "roi"
-RECTANGLE_LABEL = {
-    "color": "#ffcc00",
-    "fillColor": "#ffcc0033",
-    "strokeWidth": 2,
-}
-
-
-def rectangle_from_ruler(ruler):
-    """Use a ruler's endpoints as a native VolView rectangle's opposite corners.
-
-    Edges follow the referenced image's in-plane axes; rotated boxes are
-    polygons. The ruler's frame is echoed for placement.
-    """
-    frame = ruler["frameOfReference"]
-    rectangle = {
-        "firstPoint": list(ruler["firstPoint"]),
-        "secondPoint": list(ruler["secondPoint"]),
-        "frameOfReference": {
-            "planeNormal": list(frame["planeNormal"]),
-            "planeOrigin": list(frame["planeOrigin"]),
-        },
-        "labelName": RECTANGLE_LABEL_NAME,
-        "name": "Ruler rectangle",
-    }
-    for advisory in ("slice", "frame"):
-        if advisory in ruler:
-            rectangle[advisory] = ruler[advisory]
-    return rectangle
-
-
-def rulers_to_rectangles(annotations):
-    """Return one labeled native rectangle per ruler as an additive result.
-
-    Input tools are not echoed because annotation results are additive.
-    """
-    tools = annotations.get("tools") or {}
-    derived = [rectangle_from_ruler(ruler) for ruler in tools.get("rulers") or []]
-
-    result = {
-        "schemaVersion": SCHEMA_VERSION,
-        "space": SPACE,
-        "tools": {"rectangles": derived},
-    }
-    if derived:
-        input_rectangle_labels = (annotations.get("labels") or {}).get(
-            "rectangles"
-        ) or {}
-        result["labels"] = {
-            "rectangles": {
-                RECTANGLE_LABEL_NAME: dict(
-                    input_rectangle_labels.get(RECTANGLE_LABEL_NAME, RECTANGLE_LABEL)
-                )
-            }
-        }
-    return result

@@ -13,7 +13,6 @@ interface:
 - Median Filter
 - Masked Median Filter
 - Region of Interest Rulers
-- Ruler to Rectangle
 
 ## Build and inspect
 
@@ -126,27 +125,6 @@ The annotations input uses a `<longflag>` rather than an `<index>`, which makes
 it optional: an image whose regions carry no rulers yet is the task's primary
 case, and VolView binds an annotations input only once the image has a finished
 annotation.
-
-## Ruler to Rectangle
-
-The **Ruler to Rectangle** task uses each ruler's endpoints as the opposite
-corners of a rectangle. Edges follow the referenced image's in-plane axes; use
-a polygon for a rotated box. The output is additive, so source annotations are
-not echoed.
-
-The Slicer Execution Model has no vector-annotation element, so both sides are
-`<file>` parameters whose `fileExtensions` declares `.annotations.json`. That
-declaration is the only signal Girder-VolView reads: an input so declared is
-bound to the annotations on the active image, and an output so declared is
-applied back onto it.
-
-The file is a versioned envelope whose coordinates are world LPS millimetres,
-never image indices. `volview_cli_base.annotations` reads and writes it
-fail-closed. The normative definition is the `volview` package's backend
-contract, documented for authors in the Girder-VolView
-[custom Slicer CLI guide](https://github.com/DigitalSlideArchive/girder_volview/blob/main/docs/custom-slicer-clis.md);
-the checks here are only a runtime guard for clear job failures, not a second
-contract authority.
 
 ## DICOM slice inputs
 

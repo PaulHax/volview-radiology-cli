@@ -1,20 +1,15 @@
 import json
 import os
-import xml.etree.ElementTree as ElementTree
 
 import pytest
 
 from conftest import FIXTURES
 from volview_cli_base.annotations import (
-    RECTANGLE_LABEL_NAME,
     load_annotations,
     read_annotations,
-    rectangle_from_ruler,
-    rulers_to_rectangles,
     write_annotations,
 )
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AXIAL_FRAME = {"planeNormal": [0, 0, 1], "planeOrigin": [0, 0, -12.5]}
 
 
@@ -30,119 +25,6 @@ def annotations_file(tools=None, labels=None):
     if labels is not None:
         file["labels"] = labels
     return file
-
-
-# --------------------------------------------------------------------------
-# Transformation
-# --------------------------------------------------------------------------
-
-
-def test_ruler_endpoints_become_rectangle_opposite_corners():
-    rectangle = rectangle_from_ruler(
-        ruler([-20, -10, -12.5], [20, 10, -12.5], slice=42)
-    )
-
-    assert rectangle["firstPoint"] == [-20.0, -10.0, -12.5]
-    assert rectangle["secondPoint"] == [20.0, 10.0, -12.5]
-    assert rectangle["frameOfReference"] == AXIAL_FRAME
-    assert rectangle["slice"] == 42
-    assert rectangle["labelName"] == RECTANGLE_LABEL_NAME
-
-
-def test_rectangle_echoes_an_image_aligned_oblique_frame():
-    # Rectangle edge directions come from the referenced image; the producer
-    # supplies only opposite corners and echoes the frame used to locate them.
-    frame = {
-        "planeNormal": [0.7071067811865476, 0.7071067811865476, 0],
-        "planeOrigin": [0, 0, 0],
-    }
-    rectangle = rectangle_from_ruler(
-        {
-            "firstPoint": [1, -1, -2],
-            "secondPoint": [-1, 1, 2],
-            "frameOfReference": frame,
-        }
-    )
-
-    assert rectangle["firstPoint"] == [1.0, -1.0, -2.0]
-    assert rectangle["secondPoint"] == [-1.0, 1.0, 2.0]
-    assert rectangle["frameOfReference"] == frame
-
-
-def test_emits_one_rectangle_per_ruler_without_echoing_input_tools():
-    polygon = {
-        "points": [[0, 0, -12.5], [1, 0, -12.5], [1, 1, -12.5]],
-        "frameOfReference": AXIAL_FRAME,
-    }
-    source = annotations_file(
-        tools={
-            "rulers": [
-                ruler([-20, 0, -12.5], [20, 0, -12.5]),
-                ruler([0, 0, 1], [4, 0, 1]),
-            ],
-            "rectangles": [ruler([-5, -5, -12.5], [5, 5, -12.5])],
-            "polygons": [polygon],
-        }
-    )
-
-    result = rulers_to_rectangles(source)
-
-    assert set(result["tools"]) == {"rectangles"}
-    derived = result["tools"]["rectangles"]
-    assert len(derived) == 2
-    assert all(rectangle["labelName"] == RECTANGLE_LABEL_NAME for rectangle in derived)
-    assert polygon not in derived
-    # The additive result is self-describing without carrying source tools.
-    assert load_annotations(result) is result
-
-
-def test_no_rulers_yields_no_rectangles_and_no_label():
-    result = rulers_to_rectangles(annotations_file(tools={"rulers": []}))
-
-    assert result["tools"]["rectangles"] == []
-    assert "labels" not in result
-
-
-# --------------------------------------------------------------------------
-# Per-kind label namespaces
-# --------------------------------------------------------------------------
-
-
-def test_label_namespaces_stay_independent():
-    source = annotations_file(
-        tools={"rulers": [ruler([-20, 0, -12.5], [20, 0, -12.5], labelName="roi")]},
-        labels={"rulers": {"roi": {"color": "#ff0000"}}},
-    )
-
-    labels = rulers_to_rectangles(source)["labels"]
-
-    # Same name, different kind: the ruler's label is not emitted and the
-    # derived rectangles get their own style.
-    assert set(labels) == {"rectangles"}
-    assert labels["rectangles"]["roi"]["color"] != "#ff0000"
-
-
-def test_an_existing_rectangle_label_keeps_its_style():
-    source = annotations_file(
-        tools={"rulers": [ruler([-20, 0, -12.5], [20, 0, -12.5])]},
-        labels={"rectangles": {RECTANGLE_LABEL_NAME: {"color": "#123456"}}},
-    )
-
-    result = rulers_to_rectangles(source)
-
-    assert result["labels"]["rectangles"][RECTANGLE_LABEL_NAME] == {"color": "#123456"}
-    assert load_annotations(result) is result
-
-
-def test_input_labels_are_not_mutated():
-    labels = {"rectangles": {}}
-    source = annotations_file(
-        tools={"rulers": [ruler([-20, 0, -12.5], [20, 0, -12.5])]}, labels=labels
-    )
-
-    rulers_to_rectangles(source)
-
-    assert labels == {"rectangles": {}}
 
 
 # --------------------------------------------------------------------------
@@ -377,7 +259,7 @@ def test_rejects_a_non_finite_coordinate(bad):
 
 
 # --------------------------------------------------------------------------
-# Round trip and registration
+# Round trip
 # --------------------------------------------------------------------------
 
 
@@ -387,11 +269,10 @@ def test_round_trip_through_disk(tmp_path):
     )
     output = tmp_path / "nested" / "out.annotations.json"
 
-    write_annotations(rulers_to_rectangles(source), output)
+    write_annotations(source, output)
 
     result = read_annotations(output)
-    assert len(result["tools"]["rectangles"]) == 1
-    assert result["labels"]["rectangles"][RECTANGLE_LABEL_NAME]
+    assert result == source
 
 
 def test_writing_an_invalid_file_fails_before_the_write(tmp_path):
@@ -427,35 +308,5 @@ def test_reads_the_published_interchange_example():
         os.path.join(FIXTURES, "annotations", "interchange-example.annotations.json")
     )
 
-    result = rulers_to_rectangles(example)
-
-    assert set(result["tools"]) == {"rectangles"}
-    assert len(result["tools"]["rectangles"]) == len(example["tools"]["rulers"])
-    assert load_annotations(result) is result
-
-
-def test_task_is_registered_with_matching_files():
-    with open(os.path.join(REPO_ROOT, "cli_list.json"), encoding="utf-8") as stream:
-        assert "RulerToRectangle" in json.load(stream)
-    for extension in (".py", ".xml"):
-        assert os.path.exists(
-            os.path.join(REPO_ROOT, "RulerToRectangle", "RulerToRectangle" + extension)
-        )
-
-
-def test_task_xml_declares_the_annotations_extension():
-    spec = ElementTree.parse(
-        os.path.join(REPO_ROOT, "RulerToRectangle", "RulerToRectangle.xml")
-    )
-    files = {param.findtext("name"): param for param in spec.iter("file")}
-
-    # The declared extension is the only signal VolView reads to bind vector
-    # annotations in and to apply them back out.
-    for name, channel in (
-        ("inputAnnotations", "input"),
-        ("outputAnnotations", "output"),
-    ):
-        assert files[name].get("fileExtensions") == ".annotations.json"
-        assert files[name].findtext("channel") == channel
-    # Girder hands the file ids straight to the CLI, which fetches them itself.
-    assert files["inputAnnotations"].get("reference") == "_girder_id_"
+    assert set(example["tools"]) == {"rulers", "rectangles", "polygons"}
+    assert load_annotations(example) is example
