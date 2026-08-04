@@ -19,7 +19,7 @@ def test_unknown_cli_exits_nonzero_and_warns(monkeypatch, capsys):
     assert "Unknown CLI" in capsys.readouterr().err
 
 
-def test_list_cli_output_unchanged(monkeypatch, capsys):
+def test_list_cli_output_contains_only_registered_tasks(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["cli_list.py", "--list_cli"])
     # Returns without sys.exit; must still print the full spec.
     cli_list.processCLI("cli_list.json")
@@ -29,9 +29,9 @@ def test_list_cli_output_unchanged(monkeypatch, capsys):
         "ThresholdSegmentation",
         "MedianFilter",
         "RegionOfInterestRulers",
-        "RulerToRectangle",
     ):
         assert task in out
+    assert "RulerToRectangle" not in out
 
 
 def test_child_exit_code_is_propagated(monkeypatch):

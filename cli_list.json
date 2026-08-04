@@ -11,9 +11,6 @@
   "RegionOfInterestRulers": {
     "type": "python"
   },
-  "RulerToRectangle": {
-    "type": "python"
-  },
   "ThresholdSegmentation": {
     "type": "python"
   }
