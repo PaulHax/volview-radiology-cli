@@ -448,9 +448,12 @@ def segment_rows(segments, measurements, existing, voxel_counts, voxel_volume_mm
         if segment_name in duplicated:
             # Two segments answering to one name make every ruler naming it
             # ambiguous, so the join below is reported rather than trusted.
-            warnings.append("duplicate_segment_name")
+            warnings.append(
+                "Multiple segmentation labels are named %r; ruler matching is ambiguous."
+                % segment_name
+            )
         if not voxel_count:
-            warnings.append("zero_volume")
+            warnings.append("Segmentation label %r has no voxels." % segment_name)
 
         row = {
             "region_of_interest": segment_name,
@@ -465,7 +468,10 @@ def segment_rows(segments, measurements, existing, voxel_counts, voxel_volume_mm
             column = kind.lower()
             rulers = existing.get((segment_name, kind)) or []
             if len(rulers) > 1:
-                warnings.append("%s_count=%d" % (column, len(rulers)))
+                warnings.append(
+                    "Found %d %s rulers for segmentation label %r; expected at most one."
+                    % (len(rulers), kind, segment_name)
+                )
             if rulers:
                 row[column + "_length_mm"] = _joined(
                     format_float(ruler_length_mm(ruler) or 0.0) for ruler in rulers
@@ -477,9 +483,12 @@ def segment_rows(segments, measurements, existing, voxel_counts, voxel_volume_mm
             else:
                 row[column + "_length_mm"] = ""
                 row[column + "_source"] = SOURCE_MISSING
-                warnings.append("no_%s" % column)
+                warnings.append(
+                    "No %s ruler exists and one could not be generated for "
+                    "segmentation label %r." % (kind, segment_name)
+                )
 
-        row["warnings"] = _joined(warnings)
+        row["warnings"] = " ".join(warnings)
         rows.append(row)
     return rows
 
@@ -501,13 +510,25 @@ def orphan_rows(existing, unparsed_labels, named_segments):
             format_float(ruler_length_mm(ruler) or 0.0) for ruler in rulers
         )
         row[kind.lower() + "_source"] = SOURCE_EXISTING
-        row["warnings"] = "no_matching_segment"
+        labels = sorted({ruler_label(ruler) for ruler in rulers})
+        if len(labels) == 1:
+            row["warnings"] = (
+                "Ruler label %r does not match any segmentation label." % labels[0]
+            )
+        else:
+            row["warnings"] = (
+                "Ruler labels %s do not match any segmentation label."
+                % ", ".join(repr(label) for label in labels)
+            )
         rows.append(row)
 
     for label in sorted(set(unparsed_labels)):
         row = dict.fromkeys(CSV_COLUMNS, "")
         row["region_of_interest"] = label
-        row["warnings"] = "unparsed_ruler_label"
+        row["warnings"] = (
+            "Ruler label %r is not a recognized measurement label; expected "
+            "'<segmentation label> LD' or '<segmentation label> SAD'." % label
+        )
         rows.append(row)
     return rows
 
