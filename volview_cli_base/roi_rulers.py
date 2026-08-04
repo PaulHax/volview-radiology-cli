@@ -4,13 +4,7 @@ Each painted segment gets two rulers: the region's longest in-plane diameter
 (LD) and its widest extent perpendicular to that diameter (SAD), both on the
 slice where the region is widest. This module derives the rulers a region is
 missing, joins them to the ones an annotator already placed, and reports both.
-
-Rulers already placed are never regenerated or moved, and a ruler whose label
-names no segment is reported rather than dropped. Generated rulers ride the
-image axis nearest to superior-inferior, so their plane always aligns to an
-axis of the referenced image. ``LD`` and ``SAD`` are label suffixes, not a
-claim about what the regions are; the measurements are ordinary planar shape
-descriptors.
+``LD`` and ``SAD`` are label suffixes, not a claim about what the regions are.
 
 ``itk`` is imported lazily so the planar measurement and the report stay
 testable without it.
@@ -27,9 +21,9 @@ LD = "LD"
 SAD = "SAD"
 MEASUREMENT_KINDS = (LD, SAD)
 
-# A label joins a segment name to a measurement kind. Generation always writes
-# a space; the audit also accepts the separators seen in hand-annotated
-# sessions.
+# A label is a segment name, a separator, and the measurement kind. Generation
+# always writes a space; the audit also accepts the separators and casing seen
+# in hand-annotated sessions.
 _LABEL_SEPARATORS = " _-:"
 
 # Styles for the labels this task creates. An input file that already defines a
@@ -62,20 +56,16 @@ def measurement_label(segment_name, kind):
 def parse_measurement_label(label_name):
     """Split ``"n2 LD"`` into ``("n2", "LD")``, or ``None`` if it is not one.
 
-    Case-insensitive on the kind and tolerant of the separator, so ``n2-ld``
-    and ``N2: sad`` both join. A separator is required, so ``"WELD"`` does not.
+    A separator is required, so ``"WELD"`` does not parse.
     """
     label = str(label_name or "").strip()
-    upper = label.upper()
-    for kind in (SAD, LD):
-        if not upper.endswith(kind):
+    for kind in MEASUREMENT_KINDS:
+        if not label.upper().endswith(kind):
             continue
         prefix = label[: -len(kind)]
-        if not prefix or prefix[-1] not in _LABEL_SEPARATORS:
-            continue
-        segment_name = prefix.rstrip(_LABEL_SEPARATORS)
-        if segment_name:
-            return segment_name, kind
+        name = prefix.rstrip(_LABEL_SEPARATORS)
+        if name and name != prefix:  # a separator is required
+            return name, kind
     return None
 
 
@@ -90,15 +80,15 @@ def index_existing_rulers(annotations):
     Returns ``({(segment_name, kind): [ruler, ...]}, [unparsed_label, ...])``;
     every ruler lands in exactly one of the two, so nothing is dropped.
     """
-    tools = (annotations or {}).get("tools") or {}
     by_measurement = {}
     unparsed = []
-    for ruler in tools.get("rulers") or []:
-        parsed = parse_measurement_label(ruler_label(ruler))
+    for ruler in ((annotations or {}).get("tools") or {}).get("rulers") or []:
+        label = ruler_label(ruler)
+        parsed = parse_measurement_label(label)
         if parsed is None:
-            unparsed.append(ruler_label(ruler))
-            continue
-        by_measurement.setdefault(parsed, []).append(ruler)
+            unparsed.append(label)
+        else:
+            by_measurement.setdefault(parsed, []).append(ruler)
     return by_measurement, unparsed
 
 
@@ -120,8 +110,7 @@ def axial_image_axis(direction):
     """The image axis whose direction is nearest to the LPS superior axis.
 
     ``direction`` is the 3x3 matrix whose column ``j`` is image axis ``j``'s
-    unit direction in LPS, so row 2 holds each axis' superior component. Axial
-    slices stack along this axis even when the volume is not perfectly axial.
+    unit direction in LPS, so row 2 holds each axis' superior component.
     """
     return max(range(3), key=lambda axis: abs(float(direction[2][axis])))
 
@@ -148,31 +137,30 @@ def _hull_candidates(rows, columns):
 
 
 def _longest_chord(points_mm):
-    """The farthest-apart pair in ``points_mm``: ``(length, index, index)``."""
+    """The farthest-apart pair in ``points_mm``: ``(length, (index, index))``."""
     import numpy as np
 
     deltas = points_mm[:, None, :] - points_mm[None, :, :]
     distances = np.sqrt((deltas**2).sum(axis=-1))
     first, second = np.unravel_index(int(np.argmax(distances)), distances.shape)
-    return float(distances[first, second]), int(first), int(second)
+    return float(distances[first, second]), (int(first), int(second))
 
 
 def _perpendicular_extent(points_mm, start_mm, end_mm, step_mm):
-    """The widest extent perpendicular to ``start_mm``->``end_mm``.
+    """The widest extent perpendicular to ``start_mm``->``end_mm``, and its ends.
 
     The region is swept in bins along the long axis and the widest bin wins, so
     the reported short axis is the region's widest span across its longest
-    diameter rather than a chord through the centroid. Returns
-    ``(length, index, index)`` into ``points_mm``; the endpoints are real
+    diameter rather than a chord through the centroid. The endpoints are real
     foreground points, though on a concave region the segment between them can
-    leave the mask.
+    leave the mask, and are ``None`` when no bin holds two points.
     """
     import numpy as np
 
     direction = end_mm - start_mm
     length = float(np.linalg.norm(direction))
     if length == 0:
-        return 0.0, None, None
+        return 0.0, None
 
     along_axis = direction / length
     across_axis = np.array([-along_axis[1], along_axis[0]])
@@ -184,7 +172,7 @@ def _perpendicular_extent(points_mm, start_mm, end_mm, step_mm):
     bins = np.clip((along * bin_count / length).astype(int), 0, bin_count - 1)
 
     widest = 0.0
-    endpoints = (None, None)
+    endpoints = None
     for index in range(bin_count):
         members = np.flatnonzero(bins == index)
         if members.size < 2:
@@ -197,7 +185,14 @@ def _perpendicular_extent(points_mm, start_mm, end_mm, step_mm):
                 int(members[int(np.argmin(values))]),
                 int(members[int(np.argmax(values))]),
             )
-    return widest, endpoints[0], endpoints[1]
+    return widest, endpoints
+
+
+def _mask_points(rows, columns, endpoints):
+    """The two ``(row, column)`` mask indices ``endpoints`` names, or ``None``."""
+    if endpoints is None:
+        return None
+    return tuple((int(rows[index]), int(columns[index])) for index in endpoints)
 
 
 def measure_slice(mask, spacing_mm):
@@ -216,29 +211,22 @@ def measure_slice(mask, spacing_mm):
     row_spacing, column_spacing = (abs(float(value)) for value in spacing_mm)
     hull_rows, hull_columns = _hull_candidates(rows, columns)
     hull_mm = np.column_stack([hull_rows * row_spacing, hull_columns * column_spacing])
-    ld_mm, first, second = _longest_chord(hull_mm)
+    ld_mm, ld_endpoints = _longest_chord(hull_mm)
 
     points_mm = np.column_stack([rows * row_spacing, columns * column_spacing])
-    step_mm = min(row_spacing, column_spacing) * 0.5
-    sad_mm, low, high = _perpendicular_extent(
-        points_mm, hull_mm[first], hull_mm[second], step_mm
+    sad_mm, sad_endpoints = _perpendicular_extent(
+        points_mm,
+        hull_mm[ld_endpoints[0]],
+        hull_mm[ld_endpoints[1]],
+        step_mm=min(row_spacing, column_spacing) * 0.5,
     )
 
-    measurement = {
+    return {
         "ld_mm": ld_mm,
         "sad_mm": sad_mm,
-        "ld_points": (
-            (int(hull_rows[first]), int(hull_columns[first])),
-            (int(hull_rows[second]), int(hull_columns[second])),
-        ),
-        "sad_points": None,
+        "ld_points": _mask_points(hull_rows, hull_columns, ld_endpoints),
+        "sad_points": _mask_points(rows, columns, sad_endpoints),
     }
-    if low is not None and high is not None:
-        measurement["sad_points"] = (
-            (int(rows[low]), int(columns[low])),
-            (int(rows[high]), int(columns[high])),
-        )
-    return measurement
 
 
 def measure_label(array, value, slice_axis, in_plane_spacing_mm):
@@ -246,9 +234,9 @@ def measure_label(array, value, slice_axis, in_plane_spacing_mm):
 
     ``array`` is the label map in storage order, ``slice_axis`` the array axis
     the slices stack along, and ``in_plane_spacing_mm`` the spacing of the two
-    remaining array axes in their natural order. Returns ``None`` when the
-    label is absent or too small to span a chord; otherwise the winning slice's
-    measurement plus its ``slice`` index.
+    remaining array axes in their natural order. Returns the winning slice's
+    measurement plus its ``slice`` index, or ``None`` when the label is absent
+    or too small to span a chord.
     """
     import numpy as np
 
@@ -295,6 +283,15 @@ def world_point(labelmap, array_index):
     return [float(value) for value in point]
 
 
+def _array_index(slice_axis, slice_index, in_plane_axes=(), in_plane=()):
+    """A ``(k, j, i)`` index on ``slice_index``, at the origin off the named axes."""
+    index = [0, 0, 0]
+    index[slice_axis] = slice_index
+    for axis, position in zip(in_plane_axes, in_plane):
+        index[axis] = position
+    return index
+
+
 def frame_of_reference(labelmap, slice_axis, slice_index):
     """The plane a generated ruler sits in, aligned to an image axis.
 
@@ -305,11 +302,9 @@ def frame_of_reference(labelmap, slice_axis, slice_index):
 
     direction = itk.array_from_matrix(labelmap.GetDirection())
     image_axis = 2 - slice_axis
-    origin_index = [0, 0, 0]
-    origin_index[slice_axis] = slice_index
     return {
         "planeNormal": [float(direction[row][image_axis]) for row in range(3)],
-        "planeOrigin": world_point(labelmap, origin_index),
+        "planeOrigin": world_point(labelmap, _array_index(slice_axis, slice_index)),
     }
 
 
@@ -319,23 +314,18 @@ def generated_ruler(labelmap, slice_axis, in_plane_axes, measurement, kind, labe
     if not points:
         return None
 
-    world = []
-    for in_plane in points:
-        array_index = [0, 0, 0]
-        array_index[slice_axis] = measurement["slice"]
-        for axis, position in zip(in_plane_axes, in_plane):
-            array_index[axis] = position
-        world.append(world_point(labelmap, array_index))
-
+    slice_index = measurement["slice"]
+    indices = [
+        _array_index(slice_axis, slice_index, in_plane_axes, point) for point in points
+    ]
+    first, second = (world_point(labelmap, index) for index in indices)
     return {
-        "firstPoint": world[0],
-        "secondPoint": world[1],
-        "frameOfReference": frame_of_reference(
-            labelmap, slice_axis, measurement["slice"]
-        ),
+        "firstPoint": first,
+        "secondPoint": second,
+        "frameOfReference": frame_of_reference(labelmap, slice_axis, slice_index),
         "labelName": label,
         "name": label,
-        "slice": measurement["slice"],
+        "slice": slice_index,
     }
 
 
@@ -384,9 +374,9 @@ def labelmap_segments(metadata, present_values):
     """``[(segment name, label value)]`` for the label map's painted segments.
 
     Embedded ``.seg.nrrd`` segment names are the region IDs the report joins
-    on; a value the metadata does not name falls back to a deterministic one.
-    A list rather than a mapping, because two segments may answer to one name
-    and collapsing them would hide exactly the defect this job reports.
+    on; an unnamed value falls back to a deterministic name. A list rather than
+    a mapping, because two segments may answer to one name and collapsing them
+    would hide exactly the defect this job reports.
     """
     names = segment_names(metadata)
     return [
@@ -457,10 +447,11 @@ def orphan_rows(input_image_path, existing, unparsed_labels, named_segments):
     for (segment_name, kind), rulers in sorted(existing.items()):
         if segment_name in named_segments:
             continue
+        labels = sorted({ruler_label(ruler) for ruler in rulers})
         row = _report_row(input_image_path, segment_name)
         row[kind.lower() + "_length_mm"] = _lengths_mm(rulers)
         row["warnings"] = "No segmentation label matches %s." % ", ".join(
-            repr(label) for label in sorted({ruler_label(ruler) for ruler in rulers})
+            map(repr, labels)
         )
         rows.append(row)
 
