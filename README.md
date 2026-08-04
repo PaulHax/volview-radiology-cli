@@ -89,75 +89,50 @@ registers every task declared in `cli_list.json`.
 
 ## Region of Interest Rulers
 
-The **Region of Interest Rulers** task finishes and checks a segment-group
-annotation in one run. It takes the painted label map and whatever rulers are
-already on the image, and returns two outputs: the rulers that were missing,
-applied back onto the image, and a downloadable CSV.
-
-The CSV stays compact for aggregation across scans: `input_image_path`,
-`roi_name`, `ld_length_mm`, `sad_length_mm`, `volume_mm3`, and `warnings`.
-`input_image_path` identifies the Girder item containing the durable input image
-or DICOM series; it never points at the temporary label-map or annotation inputs.
-
-### What it measures
+The **Region of Interest Rulers** task takes a painted label map plus whatever
+rulers are already on the image, and returns the rulers that were missing --
+applied back onto the image -- and a downloadable CSV.
 
 For each nonzero label value it finds the axial slice where the region is
 widest and measures two in-plane diameters there:
 
 - `LD` -- the longest chord across the region on that slice.
-- `SAD` -- the widest extent perpendicular to `LD` on that same slice.
+- `SAD` -- the widest extent perpendicular to `LD`.
 
-The axial slices are the ones stacked along the image axis nearest to
-superior-inferior, so a generated annotation's plane always aligns to an image
-axis even when the volume was acquired obliquely. That is what the client
-requires: it re-derives each tool's slice from `frameOfReference` and rejects
-the whole result if a plane is oblique.
+Axial slices are the ones stacked along the image axis nearest to
+superior-inferior, so a generated plane stays aligned to an image axis even for
+an obliquely acquired volume, as the client requires. `LD` and `SAD` are label
+suffixes, not a claim about what the regions are; they are ordinary planar
+shape descriptors.
 
-`LD` and `SAD` are label suffixes, not a claim about what the regions are. They
-are ordinary planar shape descriptors, and the same convention serves any label
-map whose segments are named.
+Rulers are labeled `<segment name> <kind>`, as in `n2 LD`. Embedded `.seg.nrrd`
+segment names supply the region names; other label-map formats receive
+deterministic names such as `Region 1`. A region that already carries a ruler
+keeps it, so re-running after an annotator fills in the gaps generates nothing.
+The output is additive: it carries only the rulers this run created, and a
+label the input already defines keeps its own style.
 
-### What it generates, and what it leaves alone
+The CSV has one row per painted region and one row per ruler no region claims:
+`input_image_path`, `roi_name`, `ld_length_mm`, `sad_length_mm`, `volume_mm3`,
+and `warnings`. `input_image_path` names the Girder item holding the input
+image or DICOM series, never the temporary label-map or annotation inputs.
+`warnings` is empty on a clean row and otherwise explains the problem in plain
+language -- unmatched or unparsed ruler labels, duplicate measurements or
+segment names, empty segments, and measurements neither placed nor derivable.
+The audit is case-insensitive and tolerant of separators, so an existing
+`n2-ld` joins to segment `n2` rather than being reported as an orphan.
 
-Rulers are labeled `<segment name> <kind>`, as in `n2 LD` and `n2 SAD`.
-Embedded `.seg.nrrd` segment names supply the region names; other label-map
-formats receive deterministic names such as `Region 1`.
-
-A region that already carries a ruler for a measurement keeps it. Nothing
-already placed is regenerated, moved, or replaced, so re-running the task after
-an annotator has filled in the gaps generates nothing and only re-reports. The
-output is additive and carries only the rulers this run created; input tools
-are never echoed. A label the input file already defines keeps its own style,
-so a re-run never restyles an annotator's labels.
-
-### What it checks
-
-The CSV reports one row per painted region and one row per ruler no region
-claims. The `warnings` column explains any problem in plain language, including
-the offending ruler or segmentation label. It reports unmatched and unparsed
-ruler labels, duplicate measurements or segment names, empty segments, and
-measurements that are neither placed nor derivable. A clean row has an empty
-`warnings` value.
-
-The audit accepts the separators seen in hand-annotated sessions and is
-case-insensitive on the kind, so an existing `n2-ld` still joins to segment
-`n2` rather than being reported as an orphan.
-
-### Running it without any annotations
-
-The annotations input is declared with a `<longflag>` rather than an `<index>`,
-which makes it optional. This is deliberate: an image whose regions carry no
-rulers yet is the task's primary case, and VolView binds an annotations input
-only once the image has a finished annotation. An indexed -- and therefore
-required -- input would make the form refuse to run in exactly that case. An
-absent argument means "nothing placed yet", a starting state rather than an
-error.
+The annotations input uses a `<longflag>` rather than an `<index>`, which makes
+it optional: an image whose regions carry no rulers yet is the task's primary
+case, and VolView binds an annotations input only once the image has a finished
+annotation.
 
 ## Ruler to Rectangle
 
 The **Ruler to Rectangle** task uses each ruler's endpoints as the opposite
-corners of a rectangle. It omits source annotations because outputs are
-additive.
+corners of a rectangle. Edges follow the referenced image's in-plane axes; use
+a polygon for a rotated box. The output is additive, so source annotations are
+not echoed.
 
 The Slicer Execution Model has no vector-annotation element, so both sides are
 `<file>` parameters whose `fileExtensions` declares `.annotations.json`. That
@@ -166,19 +141,12 @@ bound to the annotations on the active image, and an output so declared is
 applied back onto it.
 
 The file is a versioned envelope whose coordinates are world LPS millimetres,
-never image indices. `volview_cli_base.annotations` reads and writes it,
-fail-closed: an unrecognized `schemaVersion` or `space`, a tool without a frame
-of reference, a session-only field such as `id` or `color`, or a label name that
-its tool kind's namespace does not declare all reject the whole file. The
-normative definition is the `volview` package's backend contract, and the
-Girder-VolView
-[custom Slicer CLI guide](https://github.com/DigitalSlideArchive/girder_volview/blob/slicer-cli-docs/docs/custom-slicer-clis.md)
-documents the format for authors.
-The Python checks here are only a small runtime guard for clear job failures;
-they are not a second contract authority, and format changes begin in VolView.
-
-Rectangle edges follow the referenced image's in-plane axes. Use a polygon for
-a rotated box.
+never image indices. `volview_cli_base.annotations` reads and writes it
+fail-closed. The normative definition is the `volview` package's backend
+contract, documented for authors in the Girder-VolView
+[custom Slicer CLI guide](https://github.com/DigitalSlideArchive/girder_volview/blob/main/docs/custom-slicer-clis.md);
+the checks here are only a runtime guard for clear job failures, not a second
+contract authority.
 
 ## DICOM slice inputs
 
