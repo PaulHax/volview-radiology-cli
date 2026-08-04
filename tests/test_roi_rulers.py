@@ -217,9 +217,9 @@ def test_a_region_with_no_voxels_is_reported_rather_than_dropped():
     row = rows[0]
     assert row["voxel_count"] == "0"
     assert row["ld_source"] == ""
-    assert "zero_volume" in row["warnings"]
-    assert "no_ld" in row["warnings"]
-    assert "no_sad" in row["warnings"]
+    assert "Segmentation label 'n2' has no voxels." in row["warnings"]
+    assert "No LD ruler exists" in row["warnings"]
+    assert "No SAD ruler exists" in row["warnings"]
 
 
 def test_duplicate_measurements_are_counted_as_a_warning():
@@ -234,14 +234,21 @@ def test_duplicate_measurements_are_counted_as_a_warning():
     )
 
     assert rows[0]["ld_length_mm"] == "5;10"
-    assert "ld_count=2" in rows[0]["warnings"]
+    assert (
+        "Found 2 LD rulers for segmentation label 'n2'; expected at most one."
+        in rows[0]["warnings"]
+    )
 
 
 def test_two_segments_sharing_a_name_are_flagged():
     segments = [("n2", 1), ("n2", 2)]
     rows = segment_rows(segments, {}, {}, {1: 1, 2: 1}, 1.0)
 
-    assert all("duplicate_segment_name" in row["warnings"] for row in rows)
+    assert all(
+        "Multiple segmentation labels are named 'n2'; ruler matching is ambiguous."
+        in row["warnings"]
+        for row in rows
+    )
 
 
 def test_a_ruler_naming_no_segment_becomes_its_own_row():
@@ -252,10 +259,15 @@ def test_a_ruler_naming_no_segment_becomes_its_own_row():
     orphan = rows_by_region(rows)["n9"]
     assert orphan["ld_length_mm"] == "5"
     assert orphan["label_value"] == ""
-    assert orphan["warnings"] == "no_matching_segment"
+    assert orphan["warnings"] == (
+        "Ruler label 'n9 LD' does not match any segmentation label."
+    )
 
     unparsed = rows_by_region(rows)["scratch"]
-    assert unparsed["warnings"] == "unparsed_ruler_label"
+    assert unparsed["warnings"] == (
+        "Ruler label 'scratch' is not a recognized measurement label; expected "
+        "'<segmentation label> LD' or '<segmentation label> SAD'."
+    )
 
 
 def test_a_ruler_matching_a_painted_segment_is_not_an_orphan():

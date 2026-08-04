@@ -131,16 +131,11 @@ so a re-run never restyles an annotator's labels.
 ### What it checks
 
 The CSV reports one row per painted region and one row per ruler no region
-claims. The `warnings` column names what was found:
-
-| Warning                  | Meaning                                                     |
-| ------------------------ | ----------------------------------------------------------- |
-| `no_matching_segment`    | A ruler's label names no painted segment -- a typo, or a region never painted. |
-| `unparsed_ruler_label`   | A ruler's label is not a measurement at all.                |
-| `ld_count=N`/`sad_count=N` | A region carries more than one ruler for one measurement. |
-| `duplicate_segment_name` | Two segments answer to one name, so every ruler naming it is ambiguous. |
-| `zero_volume`            | A named segment has no voxels.                              |
-| `no_ld`/`no_sad`         | A measurement is neither placed nor derivable.              |
+claims. The `warnings` column explains any problem in plain language, including
+the offending ruler or segmentation label. It reports unmatched and unparsed
+ruler labels, duplicate measurements or segment names, empty segments, and
+measurements that are neither placed nor derivable. A clean row has an empty
+`warnings` value.
 
 The audit accepts the separators seen in hand-annotated sessions and is
 case-insensitive on the kind, so an existing `n2-ld` still joins to segment
