@@ -132,6 +132,29 @@ def resolve_inputs_to_local_paths(
     return local_paths + fetched
 
 
+def resolve_girder_item_path(value, api_url=None, token=None, client=None):
+    """Return the Girder item path containing the first bound file id.
+
+    A local-only input has no Girder item and returns an empty string.
+    """
+    tokens = parse_input_tokens(value)
+    if not tokens:
+        raise ValueError("no input files in value %r" % (value,))
+    _, file_ids = classify_tokens(tokens)
+    if not file_ids:
+        return ""
+
+    if client is None:
+        client = _make_client(api_url, token)
+    file_info = client.getFile(file_ids[0]) or {}
+    item_id = file_info.get("itemId")
+    if not item_id:
+        raise ValueError("Girder file %s has no parent item" % file_ids[0])
+    return str(
+        client.get("resource/%s/path" % item_id, parameters={"type": "item"})
+    )
+
+
 def resolve_girder_credentials(args):
     """Pull ``girderApiUrl``/``girderToken`` off parsed CLI args, env fallback.
 

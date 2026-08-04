@@ -34,7 +34,7 @@
       <name>outputReport</name>
       <label>Region of Interest Report</label>
       <channel>output</channel>
-      <description>CSV report with one row per region, carrying its volume, its two measurements, whether each was found or generated, and any problem detected.</description>
+      <description>CSV report with one row per region of interest, carrying its two measurements, segmented volume, and any problem detected.</description>
       <index>3</index>
     </file>
   </parameters>
