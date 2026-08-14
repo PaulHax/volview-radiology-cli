@@ -19,6 +19,22 @@ def test_parse_input_tokens_splits_trims_and_drops_empties():
     assert gi.parse_input_tokens("  ") == []
 
 
+def test_parse_input_tokens_flattens_multiple_cli_values():
+    assert gi.parse_input_tokens([["a", "b"], ["c,d"]]) == ["a", "b", "c", "d"]
+
+
+def test_parse_input_tokens_handles_the_real_ctk_cli_multiple_shape():
+    # ctk_cli's argparse gives a multiple="true" positional as one append of
+    # one comma-joined token: [["id1,id2"]], not the flattened [["id1","id2"]]
+    # shape a hand-written test might reach for.
+    assert gi.parse_input_tokens([["id1,id2"]]) == ["id1", "id2"]
+
+
+def test_parse_input_tokens_empty_list_and_list_of_empty_list():
+    assert gi.parse_input_tokens([]) == []
+    assert gi.parse_input_tokens([[]]) == []
+
+
 def test_looks_like_object_id():
     assert gi.looks_like_object_id("6600000000000000000000a1")
     assert gi.looks_like_object_id("aBcDeF0123456789aBcDeF01")
@@ -106,6 +122,18 @@ def test_resolve_mixed_local_and_ids(tmp_path):
     assert out[0] == str(local)   # local-first ordering
     assert len(out) == 2
     assert client.downloaded and client.downloaded[0][0] == fid
+
+
+def test_resolve_handles_the_real_ctk_cli_multiple_shape(tmp_path):
+    # The wire value a multiple="true" input actually arrives as: one append
+    # of one comma-joined token, not several separate appends.
+    ids = ["6600000000000000000000e1", "6600000000000000000000e2"]
+    client = _FakeClient()
+    out = gi.resolve_inputs_to_local_paths(
+        [[",".join(ids)]], client=client, dest_dir=str(tmp_path / "dl")
+    )
+    assert len(out) == 2
+    assert sorted(fid for fid, _ in client.downloaded) == sorted(ids)
 
 
 def test_resolve_single_id(tmp_path):

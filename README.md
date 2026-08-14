@@ -88,9 +88,10 @@ registers every task declared in `cli_list.json`.
 
 ## Region of Interest Rulers
 
-The **Region of Interest Rulers** task takes a painted label map plus whatever
-rulers are already on the image, and returns the rulers that were missing --
-applied back onto the image -- and a downloadable CSV.
+The **Region of Interest Rulers** task takes every painted label map attached
+to the open image plus whatever rulers are already on the image, and returns
+the rulers that were missing -- applied back onto the image -- and a
+downloadable CSV.
 
 For each nonzero label value it finds the axial slice where the region is
 widest and measures two in-plane diameters there:
@@ -112,19 +113,41 @@ The output is additive: it carries only the rulers this run created, and a
 label the input already defines keeps its own style.
 
 The CSV has one row per painted region and one row per ruler no region claims:
-`input_image_path`, `roi_name`, `ld_length_mm`, `sad_length_mm`, `volume_mm3`,
-and `warnings`. `input_image_path` names the Girder item holding the input
-image or DICOM series, never the temporary label-map or annotation inputs.
-`warnings` is empty on a clean row and otherwise explains the problem in plain
-language -- unmatched or unparsed ruler labels, duplicate measurements or
-segment names, empty segments, and measurements neither placed nor derivable.
-The audit is case-insensitive and tolerant of separators, so an existing
-`n2-ld` joins to segment `n2` rather than being reported as an orphan.
+`input_image_path`, `roi_name`, `labelmap_index`, `ld_length_mm`,
+`sad_length_mm`, `volume_mm3`, and `warnings`. `input_image_path` names the
+Girder item holding the input image or DICOM series, never the temporary
+label-map or annotation inputs. `labelmap_index` is the 1-based position of
+the input labelmap that produced the row (blank for a row generated from a
+ruler no labelmap claims), so two regions named alike in different label maps
+still resolve to distinct rows. `warnings` is empty on a clean row and
+otherwise explains the problem in plain language -- unmatched or unparsed
+ruler labels, duplicate measurements or segment names, empty segments, and
+measurements neither placed nor derivable. The audit is case-insensitive and
+tolerant of separators, so an existing `n2-ld` joins to segment `n2` rather
+than being reported as an orphan.
 
 The annotations input uses a `<longflag>` rather than an `<index>`, which makes
 it optional: an image whose regions carry no rulers yet is the task's primary
 case, and VolView binds an annotations input only once the image has a finished
 annotation.
+
+### Limitations
+
+Each labelmap input file is treated as one complete label map. A multi-file
+DICOM series is not supported for the labelmap input -- feeding it two or more
+files from the same series would silently measure it as several one-slice
+label maps rather than the intended volume, so the task raises instead of
+producing that result. Use a single-file format such as `.seg.nrrd`, or a
+single DICOM file, for each label map.
+
+When two segmentation maps carry a segment with the same name, the rulers this
+task generates for both share that name. Ruler generation is not changed to
+work around this: the CSV's duplicate-name warning already flags it, and the
+`labelmap_index` column disambiguates which map each row came from.
+
+A file whose `SeriesInstanceUID` can't be read is excluded from series
+grouping rather than failing closed, so corrupt or non-conformant DICOM
+series may evade detection.
 
 ## DICOM slice inputs
 

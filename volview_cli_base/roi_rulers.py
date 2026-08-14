@@ -36,11 +36,58 @@ GENERATED_LABEL_STYLES = {
 CSV_COLUMNS = (
     "input_image_path",
     "roi_name",
+    "labelmap_index",
     "ld_length_mm",
     "sad_length_mm",
     "volume_mm3",
     "warnings",
 )
+
+
+# ---------------------------------------------------------------------------
+# Labelmap inputs
+# ---------------------------------------------------------------------------
+
+
+def reject_multi_file_dicom_series(paths):
+    """Raise when two or more of ``paths`` belong to the same DICOM series.
+
+    Each labelmap file is measured as its own complete label map (see the
+    README's "Region of Interest Rulers" limitations): a multi-file DICOM
+    series given as the labelmap input would silently become one one-slice
+    labelmap per file instead of the intended volume, so this fails closed
+    rather than measure a fraction of the series. A single DICOM file is
+    unaffected -- it is already read whole by ``assemble``.
+
+    A file whose ``SeriesInstanceUID`` can't be read is excluded from series
+    grouping rather than failing closed, so a same-series pair with one
+    unreadable member could still slip through.
+    """
+    if len(paths) < 2:
+        return
+
+    from volview_cli_base.assemble import dicom_series_uid, is_dicom
+
+    files_by_series = {}
+    for path in paths:
+        if not is_dicom(path):
+            continue
+        series_uid = dicom_series_uid(path)
+        if series_uid:
+            files_by_series.setdefault(series_uid, []).append(path)
+
+    conflict = next(
+        (files for files in files_by_series.values() if len(files) > 1), None
+    )
+    if conflict is None:
+        return
+    raise ValueError(
+        "%d label map input files belong to the same DICOM series; each "
+        "labelmap input file is treated as one complete label map, so a "
+        "multi-file DICOM series is not supported for the labelmap input -- "
+        "use a single-file format such as .seg.nrrd instead. Files: %s"
+        % (len(conflict), ", ".join(conflict))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -362,11 +409,13 @@ def _lengths_mm(rulers):
     return ";".join(format_float(ruler_length_mm(ruler) or 0.0) for ruler in rulers)
 
 
-def _report_row(input_image_path, roi_name):
+def _report_row(input_image_path, roi_name, labelmap_index=None):
     """A blank report row, ready for whichever cells the caller fills in."""
     row = dict.fromkeys(CSV_COLUMNS, "")
     row["input_image_path"] = input_image_path
     row["roi_name"] = roi_name
+    if labelmap_index is not None:
+        row["labelmap_index"] = labelmap_index
     return row
 
 
@@ -386,16 +435,29 @@ def labelmap_segments(metadata, present_values):
 
 
 def segment_rows(
-    input_image_path, segments, measurements, existing, voxel_counts, voxel_volume_mm3
+    input_image_path,
+    segments,
+    measurements,
+    existing,
+    voxel_counts,
+    voxel_volume_mm3,
+    segment_name_counts=None,
+    labelmap_index=None,
 ):
     """One report row per painted segment, joined to the rulers it already has.
 
     ``segments`` is what ``labelmap_segments`` returns; ``measurements`` and
     ``voxel_counts`` are keyed by label value and may be missing an entry. A
     segment whose label map has no voxels still gets a row, because a silently
-    absent region is the report's most important finding.
+    absent region is the report's most important finding. ``labelmap_index``
+    identifies which input labelmap the rows came from, so two segments named
+    alike in different label maps still resolve to distinct rows.
     """
-    name_counts = Counter(name for name, _ in segments)
+    name_counts = (
+        segment_name_counts
+        if segment_name_counts is not None
+        else Counter(name for name, _ in segments)
+    )
 
     rows = []
     for segment_name, label_value in segments:
@@ -412,7 +474,7 @@ def segment_rows(
         if not voxel_count:
             warnings.append("Segmentation label %r has no voxels." % segment_name)
 
-        row = _report_row(input_image_path, segment_name)
+        row = _report_row(input_image_path, segment_name, labelmap_index)
         row["volume_mm3"] = format_float(voxel_count * voxel_volume_mm3)
         for kind in MEASUREMENT_KINDS:
             column = kind.lower()

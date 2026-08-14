@@ -29,6 +29,8 @@ def parse_input_tokens(value):
     """
     if value is None:
         return []
+    if isinstance(value, (list, tuple)):
+        return [token for entry in value for token in parse_input_tokens(entry)]
     return [token.strip() for token in str(value).split(",") if token.strip()]
 
 

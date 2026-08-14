@@ -69,8 +69,8 @@ def voxel_summary(label_array, spacing):
 
 def image_metadata(image):
     """Convert an ITK image metadata dictionary to ordinary strings."""
+    from volview_cli_base.assemble import dictionary_keys
+
     dictionary = image.GetMetaDataDictionary()
-    keys = (
-        dictionary.GetKeys() if hasattr(dictionary, "GetKeys") else dictionary.keys()
-    )
+    keys = dictionary_keys(dictionary)
     return {str(key): str(dictionary[key]) for key in keys}

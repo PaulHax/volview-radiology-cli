@@ -25,13 +25,38 @@ _SERIES_PIXEL_TYPE = itk.F
 _SERIES_DIMENSION = 3
 
 
-def _is_dicom(path):
+def is_dicom(path):
     """Sniff bytes: does GDCM recognize this file as DICOM?
 
     Byte-level detection allows extensionless DICOM slices to join the series.
     """
     image_io = itk.GDCMImageIO.New()
     return bool(image_io.CanReadFile(str(path)))
+
+
+def dictionary_keys(dictionary):
+    """An ITK metadata dictionary's keys, across the ``GetKeys``/``keys`` APIs."""
+    return dictionary.GetKeys() if hasattr(dictionary, "GetKeys") else dictionary.keys()
+
+
+def dicom_series_uid(path):
+    """A DICOM file's ``SeriesInstanceUID`` (tag ``0020|000e``), or ``None``.
+
+    Reads only the header via ``GDCMImageIO.ReadImageInformation``, so this is
+    cheap even for a large volume and never touches pixel data. A truncated or
+    otherwise corrupt file returns ``None`` rather than raising.
+    """
+    image_io = itk.GDCMImageIO.New()
+    image_io.SetFileName(str(path))
+    try:
+        image_io.ReadImageInformation()
+    except Exception:
+        return None
+    dictionary = image_io.GetMetaDataDictionary()
+    keys = dictionary_keys(dictionary)
+    if "0020|000e" not in keys:
+        return None
+    return str(dictionary["0020|000e"]).strip() or None
 
 
 def _common_directory(paths):
@@ -96,7 +121,7 @@ def assemble(local_paths):
     if not paths:
         raise ValueError("assemble: no input files given")
 
-    dicom_paths = [p for p in paths if _is_dicom(p)]
+    dicom_paths = [p for p in paths if is_dicom(p)]
 
     if dicom_paths and len(dicom_paths) == len(paths):
         if len(dicom_paths) == 1:
