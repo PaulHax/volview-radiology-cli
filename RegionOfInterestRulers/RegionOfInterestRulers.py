@@ -7,6 +7,7 @@ every region alongside its measurements and any defect found.
 
 import os
 import sys
+from collections import Counter
 
 import itk
 
@@ -36,6 +37,7 @@ from volview_cli_base.roi_rulers import (  # noqa: E402
     measure_label,
     measurement_label,
     orphan_rows,
+    reject_multi_file_dicom_series,
     segment_rows,
     slice_axis_and_spacing,
     write_csv,
@@ -65,63 +67,98 @@ def main(args):
     labelmap_paths = resolve_inputs_to_local_paths(
         args.inputLabelmap, api_url=api_url, token=token
     )
-    print("Reading label map from %d file(s)" % len(labelmap_paths), flush=True)
-    labelmap = assemble(labelmap_paths)
-    if int(labelmap.GetNumberOfComponentsPerPixel()) != 1:
-        raise ValueError("input label map must have exactly one component per pixel")
+    reject_multi_file_dicom_series(labelmap_paths)
+    print("Reading %d label map(s)" % len(labelmap_paths), flush=True)
 
-    array = itk.array_view_from_image(labelmap)
-    voxel_counts, voxel_volume_mm3 = voxel_summary(array, labelmap.GetSpacing())
     annotations = read_input_annotations(
         getattr(args, "inputAnnotations", ""), api_url, token
     )
     existing, unparsed = index_existing_rulers(annotations)
 
-    slice_axis, in_plane_spacing, in_plane_axes = slice_axis_and_spacing(labelmap)
-    segments = labelmap_segments(image_metadata(labelmap), list(voxel_counts))
-
-    measurements = {}
+    labelmaps = []
     rulers = []
     styles = {}
-    for segment_name, label_value in segments:
-        measurement = measure_label(array, label_value, slice_axis, in_plane_spacing)
-        if measurement is None:
-            continue
-        measurements[label_value] = measurement
-        for kind in MEASUREMENT_KINDS:
-            if existing.get((segment_name, kind)):
-                continue  # the annotator already placed this one
-            label = measurement_label(segment_name, kind)
-            ruler = generated_ruler(
-                labelmap, slice_axis, in_plane_axes, measurement, kind, label
+    for path in labelmap_paths:
+        labelmap = assemble([path])
+        if int(labelmap.GetNumberOfComponentsPerPixel()) != 1:
+            raise ValueError("input label map must have exactly one component per pixel")
+        array = itk.array_view_from_image(labelmap)
+        voxel_counts, voxel_volume_mm3 = voxel_summary(
+            array, labelmap.GetSpacing()
+        )
+        slice_axis, in_plane_spacing, in_plane_axes = slice_axis_and_spacing(
+            labelmap
+        )
+        segments = labelmap_segments(image_metadata(labelmap), list(voxel_counts))
+
+        measurements = {}
+        for segment_name, label_value in segments:
+            measurement = measure_label(
+                array, label_value, slice_axis, in_plane_spacing
             )
-            if ruler is None:
+            if measurement is None:
                 continue
-            rulers.append(ruler)
-            styles[label] = GENERATED_LABEL_STYLES[kind]
+            measurements[label_value] = measurement
+            for kind in MEASUREMENT_KINDS:
+                if existing.get((segment_name, kind)):
+                    continue  # the annotator already placed this one
+                label = measurement_label(segment_name, kind)
+                ruler = generated_ruler(
+                    labelmap, slice_axis, in_plane_axes, measurement, kind, label
+                )
+                if ruler is None:
+                    continue
+                rulers.append(ruler)
+                styles[label] = GENERATED_LABEL_STYLES[kind]
+
+        labelmaps.append(
+            {
+                "segments": segments,
+                "measurements": measurements,
+                "voxel_counts": voxel_counts,
+                "voxel_volume_mm3": voxel_volume_mm3,
+            }
+        )
 
     write_annotations(
         build_output_annotations(rulers, styles, annotations), args.outputAnnotations
     )
 
-    rows = segment_rows(
-        input_image_path,
-        segments,
-        measurements,
-        existing,
-        voxel_counts,
-        voxel_volume_mm3,
-    )
+    all_segments = [
+        segment for analysis in labelmaps for segment in analysis["segments"]
+    ]
+    name_counts = Counter(name for name, _ in all_segments)
+    rows = []
+    for index, analysis in enumerate(labelmaps, start=1):
+        rows.extend(
+            segment_rows(
+                input_image_path,
+                analysis["segments"],
+                analysis["measurements"],
+                existing,
+                analysis["voxel_counts"],
+                analysis["voxel_volume_mm3"],
+                segment_name_counts=name_counts,
+                labelmap_index=index,
+            )
+        )
     rows.extend(
         orphan_rows(
-            input_image_path, existing, unparsed, {name for name, _ in segments}
+            input_image_path, existing, unparsed, {name for name, _ in all_segments}
         )
     )
     write_csv(rows, args.outputReport)
 
     print(
-        "Generated %d ruler(s) for %d region(s); wrote %d report row(s) to %s"
-        % (len(rulers), len(segments), len(rows), args.outputReport),
+        "Generated %d ruler(s) for %d region(s) across %d label map(s); "
+        "wrote %d report row(s) to %s"
+        % (
+            len(rulers),
+            len(all_segments),
+            len(labelmaps),
+            len(rows),
+            args.outputReport,
+        ),
         flush=True,
     )
 

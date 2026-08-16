@@ -14,6 +14,8 @@ itk = pytest.importorskip("itk")
 from conftest import DICOM_SERIES_DIR, DICOM_TWO_SERIES_DIR  # noqa: E402
 from volview_cli_base.assemble import (  # noqa: E402
     assemble,
+    dicom_series_uid,
+    is_dicom,
     to_scalar_float,
     write_image,
 )
@@ -110,6 +112,38 @@ def test_to_scalar_float_preserves_geometry():
     assert itk.array_from_image(scalar).dtype == np.float32
     assert _spacing(scalar) == pytest.approx(EXPECTED_SPACING, abs=1e-3)
     assert _size(scalar) == EXPECTED_SIZE
+
+
+# --- DICOM sniffing --------------------------------------------------------
+
+
+def test_is_dicom_recognizes_the_fixture_and_rejects_a_plain_file(tmp_path):
+    assert is_dicom(_SERIES_FILES[0])
+    non_dicom = tmp_path / "not_dicom.txt"
+    non_dicom.write_text("hello")
+    assert not is_dicom(str(non_dicom))
+
+
+def test_dicom_series_uid_matches_within_a_series_and_differs_across_series():
+    uid_a = dicom_series_uid(_SERIES_FILES[0])
+    uid_b = dicom_series_uid(_SERIES_FILES[1])
+    assert uid_a and uid_a == uid_b
+
+    other_series_file = os.path.join(DICOM_TWO_SERIES_DIR, "series0_slice000.dcm")
+    other_uid = dicom_series_uid(other_series_file)
+    assert other_uid and other_uid != uid_a
+
+
+def test_dicom_series_uid_returns_none_for_a_truncated_file(tmp_path):
+    """A file holding only the 128-byte preamble and the ``DICM`` magic gives
+    ``ReadImageInformation`` nothing to parse -- it raises, and
+    ``dicom_series_uid`` must turn that into ``None`` rather than letting the
+    raw exception out, since every labelmap input is passed through it."""
+    corrupt = tmp_path / "truncated.dcm"
+    with open(_SERIES_FILES[0], "rb") as source:
+        corrupt.write_bytes(source.read(132))
+
+    assert dicom_series_uid(str(corrupt)) is None
 
 
 # --- fail closed ----------------------------------------------------------

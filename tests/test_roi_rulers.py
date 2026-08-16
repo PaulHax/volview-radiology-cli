@@ -1,4 +1,5 @@
 import csv
+from collections import Counter
 
 import numpy as np
 import pytest
@@ -248,6 +249,18 @@ def test_duplicate_measurements_are_counted_as_a_warning():
     )
 
 
+def test_labelmap_index_identifies_which_labelmap_produced_a_row():
+    rows = segment_rows(
+        INPUT_IMAGE_PATH, [("n2", 1)], {}, {}, {}, 1.0, labelmap_index=2
+    )
+    assert rows[0]["labelmap_index"] == 2
+
+
+def test_labelmap_index_is_blank_when_not_given():
+    rows = segment_rows(INPUT_IMAGE_PATH, [("n2", 1)], {}, {}, {}, 1.0)
+    assert rows[0]["labelmap_index"] == ""
+
+
 def test_two_segments_sharing_a_name_are_flagged():
     segments = [("n2", 1), ("n2", 2)]
     rows = segment_rows(INPUT_IMAGE_PATH, segments, {}, {}, {1: 1, 2: 1}, 1.0)
@@ -259,6 +272,18 @@ def test_two_segments_sharing_a_name_are_flagged():
     )
 
 
+def test_an_explicit_empty_name_counts_is_honored_not_recomputed():
+    # An aggregate Counter with no entries is a real answer ("no duplicates at
+    # the scope the caller checked"), not a stand-in for "none given" -- it
+    # must not be replaced by a recount of this call's own segments.
+    segments = [("n2", 1), ("n2", 2)]
+    rows = segment_rows(
+        INPUT_IMAGE_PATH, segments, {}, {}, {1: 1, 2: 1}, 1.0,
+        segment_name_counts=Counter(),
+    )
+    assert all("ambiguous" not in row["warnings"] for row in rows)
+
+
 def test_a_ruler_naming_no_segment_becomes_its_own_row():
     existing = {("n9", "LD"): [ruler("n9 LD", [0, 0, 0], [3, 4, 0])]}
 
@@ -266,6 +291,7 @@ def test_a_ruler_naming_no_segment_becomes_its_own_row():
 
     orphan = rows_by_region(rows)["n9"]
     assert orphan["input_image_path"] == INPUT_IMAGE_PATH
+    assert orphan["labelmap_index"] == ""
     assert orphan["ld_length_mm"] == "5"
     assert orphan["volume_mm3"] == ""
     assert orphan["warnings"] == "No segmentation label matches 'n9 LD'."

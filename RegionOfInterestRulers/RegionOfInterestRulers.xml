@@ -2,7 +2,7 @@
 <executable>
   <category>Radiology</category>
   <title>Region of Interest Rulers</title>
-  <description>Measure every named region in a label map: add the long-axis and short-axis rulers a region does not already have, check the rulers that are there against the segment names, and return a downloadable CSV of the measurements and any problem found.</description>
+  <description>Measure every named region in all label maps on the input volume: add the long-axis and short-axis rulers a region does not already have, check the rulers that are there against the segment names, and return a downloadable CSV of the measurements and any problem found.</description>
   <version>0.1.0</version>
   <license>MIT</license>
   <contributor>VolView</contributor>
@@ -16,11 +16,11 @@
       <description>Volume the regions were painted on. Declared so the generated rulers come back onto it; no pixels are read from it.</description>
       <index>0</index>
     </image>
-    <image type="label" reference="_girder_id_">
+    <image type="label" reference="_girder_id_" multiple="true">
       <name>inputLabelmap</name>
       <label>Input Label Map</label>
       <channel>input</channel>
-      <description>A scalar integer label map. Zero is background and each nonzero value is one region of interest. Embedded .seg.nrrd segment names are the region names the rulers are labeled with.</description>
+      <description>All scalar integer label maps attached to the input volume. Zero is background and each nonzero value is one region of interest. Embedded .seg.nrrd segment names are the region names the rulers are labeled with.</description>
       <index>1</index>
     </image>
     <file fileExtensions=".annotations.json" reference="inputVolume">
