@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from volview_cli_base.roi_report import segment_names, voxel_summary
+from volview_cli_base.segment_report import segment_names, voxel_summary
 
 
 def test_segment_names_read_slicer_metadata():

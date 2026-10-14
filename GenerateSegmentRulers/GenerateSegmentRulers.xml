@@ -1,52 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <executable>
   <category>Radiology</category>
-  <title>Region of Interest Rulers</title>
-  <description>Measure every named region in all label maps on the input volume: add the long-axis and short-axis rulers a region does not already have, check the rulers that are there against the segment names, and return a downloadable CSV of the measurements and any problem found.</description>
+  <title>Generate Segment Rulers</title>
+  <description>Add diameter rulers to segments without rulers.</description>
   <version>0.1.0</version>
   <license>MIT</license>
   <contributor>VolView</contributor>
   <parameters>
     <label>Input and output</label>
-    <description>Annotated volume, its regions, and the generated measurements.</description>
+    <description>Annotated volume, its segments, and the generated rulers.</description>
     <image reference="_girder_id_">
       <name>inputVolume</name>
       <label>Input Volume</label>
       <channel>input</channel>
-      <description>Volume the regions were painted on. Declared so the generated rulers come back onto it; no pixels are read from it.</description>
+      <description>Volume that receives the generated rulers.</description>
       <index>0</index>
     </image>
     <image type="label" reference="_girder_id_" multiple="true">
       <name>inputLabelmap</name>
       <label>Input Label Map</label>
       <channel>input</channel>
-      <description>All scalar integer label maps attached to the input volume. Zero is background and each nonzero value is one region of interest. Embedded .seg.nrrd segment names are the region names the rulers are labeled with.</description>
+      <description>Painted scalar integer label maps. Embedded segment names supply ruler labels; zero is background.</description>
       <index>1</index>
     </image>
     <file fileExtensions=".annotations.json" reference="inputVolume">
       <name>outputAnnotations</name>
       <label>Output Annotations</label>
       <channel>output</channel>
-      <description>One long-axis and one short-axis ruler for each region that did not already have them. Regions whose rulers exist are left alone.</description>
+      <description>New rulers labeled with their segment name. Any ruler for a segment suppresses generation.</description>
       <index>2</index>
-    </file>
-    <file fileExtensions=".csv">
-      <name>outputReport</name>
-      <label>Region of Interest Report</label>
-      <channel>output</channel>
-      <description>CSV report with one row per region of interest, carrying its two measurements, segmented volume, and any problem detected.</description>
-      <index>3</index>
     </file>
   </parameters>
   <parameters>
     <label>Existing annotations</label>
-    <description>The rulers already on the image, which this task checks and preserves.</description>
+    <description>The rulers already on the image, which this task preserves.</description>
     <file fileExtensions=".annotations.json" reference="_girder_id_">
       <name>inputAnnotations</name>
       <label>Input Annotations</label>
       <channel>input</channel>
       <longflag>inputAnnotations</longflag>
-      <description>Rulers already placed on the input volume. Optional: VolView binds this input only once the image has a finished annotation, and regions with no rulers yet are this task's starting case.</description>
+      <description>Optional rulers for the input volume.</description>
       <default></default>
     </file>
   </parameters>

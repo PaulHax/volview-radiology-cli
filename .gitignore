@@ -12,6 +12,7 @@ dist/
 .coverage
 htmlcov/
 .claude/
+*.dcm
 
 # Virtualenvs
 .venv/

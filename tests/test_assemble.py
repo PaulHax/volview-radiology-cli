@@ -11,7 +11,6 @@ import pytest
 
 itk = pytest.importorskip("itk")
 
-from conftest import DICOM_SERIES_DIR, DICOM_TWO_SERIES_DIR  # noqa: E402
 from volview_cli_base.assemble import (  # noqa: E402
     assemble,
     dicom_series_uid,
@@ -20,14 +19,13 @@ from volview_cli_base.assemble import (  # noqa: E402
     write_image,
 )
 
-# The synthetic fixture geometry (see tests/fixtures gen script).
 EXPECTED_SIZE = [16, 16, 8]
 EXPECTED_SPACING = [0.7, 0.7, 2.5]
-_SERIES_FILES = sorted(
-    os.path.join(DICOM_SERIES_DIR, f)
-    for f in os.listdir(DICOM_SERIES_DIR)
-    if f.endswith(".dcm")
-)
+
+
+@pytest.fixture
+def series_files(dicom_fixtures):
+    return sorted(str(path) for path in (dicom_fixtures / "dicom_series").glob("*.dcm"))
 
 
 def _size(image):
@@ -42,9 +40,9 @@ def _spacing(image):
 
 # --- the multi-slice DICOM regression ------------------------------------
 
-def test_multislice_series_recovers_metadata_spacing():
+def test_multislice_series_recovers_metadata_spacing(series_files):
     """z-spacing must be 2.5 (from ImagePositionPatient), never a defaulted 1."""
-    image = assemble(_SERIES_FILES)
+    image = assemble(series_files)
     assert _size(image) == EXPECTED_SIZE
     sx, sy, sz = _spacing(image)
     assert sx == pytest.approx(0.7, abs=1e-3)
@@ -54,10 +52,10 @@ def test_multislice_series_recovers_metadata_spacing():
     assert abs(sz - 1.0) > 0.5
 
 
-def test_multislice_series_is_sorted_by_metadata_not_input_order():
+def test_multislice_series_is_sorted_by_metadata_not_input_order(series_files):
     """The fixtures' filenames are in REVERSE z order; assemble must ignore
     that and produce a monotonic intensity ramp along z (0,100,..,700)."""
-    image = assemble(_SERIES_FILES)
+    image = assemble(series_files)
     arr = itk.array_from_image(image)  # shape (z, y, x)
     # (y=8, x=8) is outside the bright corner block, so it is the pure ramp.
     ramp = [float(arr[k, 8, 8]) for k in range(arr.shape[0])]
@@ -68,11 +66,11 @@ def test_multislice_series_is_sorted_by_metadata_not_input_order():
     assert ramp == sorted(ramp) or ramp == sorted(ramp, reverse=True)
 
 
-def test_assemble_ignores_input_path_order():
+def test_assemble_ignores_input_path_order(series_files):
     """Shuffling the input paths yields identical geometry + pixels (assemble
     re-sorts by DICOM metadata, so caller order is advisory only)."""
-    ordered = assemble(_SERIES_FILES)
-    shuffled_paths = list(_SERIES_FILES)
+    ordered = assemble(series_files)
+    shuffled_paths = list(series_files)
     random.Random(1234).shuffle(shuffled_paths)
     shuffled = assemble(shuffled_paths)
     assert _spacing(ordered) == pytest.approx(_spacing(shuffled))
@@ -106,8 +104,8 @@ def test_write_image_creates_parent_dirs(tmp_path):
 
 # --- scalar/float conversion ---------------------------------------------
 
-def test_to_scalar_float_preserves_geometry():
-    image = assemble(_SERIES_FILES)
+def test_to_scalar_float_preserves_geometry(series_files):
+    image = assemble(series_files)
     scalar = to_scalar_float(image)
     assert itk.array_from_image(scalar).dtype == np.float32
     assert _spacing(scalar) == pytest.approx(EXPECTED_SPACING, abs=1e-3)
@@ -117,30 +115,30 @@ def test_to_scalar_float_preserves_geometry():
 # --- DICOM sniffing --------------------------------------------------------
 
 
-def test_is_dicom_recognizes_the_fixture_and_rejects_a_plain_file(tmp_path):
-    assert is_dicom(_SERIES_FILES[0])
+def test_is_dicom_recognizes_the_fixture_and_rejects_a_plain_file(tmp_path, series_files):
+    assert is_dicom(series_files[0])
     non_dicom = tmp_path / "not_dicom.txt"
     non_dicom.write_text("hello")
     assert not is_dicom(str(non_dicom))
 
 
-def test_dicom_series_uid_matches_within_a_series_and_differs_across_series():
-    uid_a = dicom_series_uid(_SERIES_FILES[0])
-    uid_b = dicom_series_uid(_SERIES_FILES[1])
+def test_dicom_series_uid_matches_within_a_series_and_differs_across_series(series_files, dicom_fixtures):
+    uid_a = dicom_series_uid(series_files[0])
+    uid_b = dicom_series_uid(series_files[1])
     assert uid_a and uid_a == uid_b
 
-    other_series_file = os.path.join(DICOM_TWO_SERIES_DIR, "series0_slice000.dcm")
-    other_uid = dicom_series_uid(other_series_file)
+    other_series_file = dicom_fixtures / "dicom_two_series" / "series0_slice000.dcm"
+    other_uid = dicom_series_uid(str(other_series_file))
     assert other_uid and other_uid != uid_a
 
 
-def test_dicom_series_uid_returns_none_for_a_truncated_file(tmp_path):
+def test_dicom_series_uid_returns_none_for_a_truncated_file(tmp_path, series_files):
     """A file holding only the 128-byte preamble and the ``DICM`` magic gives
     ``ReadImageInformation`` nothing to parse -- it raises, and
     ``dicom_series_uid`` must turn that into ``None`` rather than letting the
     raw exception out, since every labelmap input is passed through it."""
     corrupt = tmp_path / "truncated.dcm"
-    with open(_SERIES_FILES[0], "rb") as source:
+    with open(series_files[0], "rb") as source:
         corrupt.write_bytes(source.read(132))
 
     assert dicom_series_uid(str(corrupt)) is None
@@ -162,16 +160,9 @@ def test_assemble_multiple_non_dicom_fails_closed(tmp_path):
         assemble([a, b])
 
 
-def test_assemble_multiple_dicom_series_fails_closed():
-    """Two distinct SeriesInstanceUIDs in one input must RAISE, not silently
-    keep the first series and drop the rest (the ``series_uids[0]`` fail-closed
-    fix). The committed fixture holds two series so the guard is exercised by
-    itk's own GDCM series detection, no pydicom needed at test time."""
-    paths = [
-        os.path.join(DICOM_TWO_SERIES_DIR, f)
-        for f in os.listdir(DICOM_TWO_SERIES_DIR)
-        if f.endswith(".dcm")
-    ]
+def test_assemble_multiple_dicom_series_fails_closed(dicom_fixtures):
+    """Two distinct SeriesInstanceUIDs must be rejected by GDCM series detection."""
+    paths = sorted(str(path) for path in (dicom_fixtures / "dicom_two_series").glob("*.dcm"))
     assert len(paths) > 1
     with pytest.raises(ValueError, match="series"):
         assemble(paths)

@@ -1,17 +1,8 @@
 {
-  "MaskedMedianFilter": {
+  "ExportSegmentStatistics": {
     "type": "python"
   },
-  "MedianFilter": {
-    "type": "python"
-  },
-  "OtsuSegmentation": {
-    "type": "python"
-  },
-  "RegionOfInterestRulers": {
-    "type": "python"
-  },
-  "ThresholdSegmentation": {
+  "GenerateSegmentRulers": {
     "type": "python"
   }
 }

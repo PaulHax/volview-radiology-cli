@@ -45,8 +45,8 @@ def _label_name(value, num_levels):
         descriptors = ["lowest", "low", "mid", "high", "highest"]
         # value runs 1..num_levels (background=0 is omitted).
         idx = int(round((value - 1) * (len(descriptors) - 1) / (num_levels - 1)))
-        return f"Region {value} ({descriptors[idx]})"
-    return f"Region {value}"
+        return f"Segment {value} ({descriptors[idx]})"
+    return f"Segment {value}"
 
 
 def _build_label_descriptors(num_levels):
