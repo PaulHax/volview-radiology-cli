@@ -12,12 +12,9 @@ on:
 permissions:
   contents: read
 
-env:
-  IMAGE_NAME: ghcr.io/${{ github.repository }}
-
 concurrency:
-  group: container-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  group: container-${{ github.event_name == 'pull_request' && github.ref || 'release' }}
+  queue: max
 
 jobs:
   test:
@@ -35,19 +32,79 @@ jobs:
           context: .
           target: test
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=test
+          cache-to: type=gha,mode=max,scope=test
+
+  image-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: final
+            manifest: cli_list.json
+            excluded: examples/cli_list.json
+          - target: examples
+            manifest: examples/cli_list.json
+            excluded: cli_list.json
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          load: true
+          push: false
+          tags: cli-check:${{ matrix.target }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+      - name: Check discovery, interfaces, and image isolation
+        run: python tests/check_image.py cli-check:${{ matrix.target }} ${{ matrix.manifest }} ${{ matrix.excluded }}
 
   publish:
-    if: github.event_name != 'pull_request'
-    needs: test
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
+    needs: [test, image-test]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Find an assigned version
+        id: existing
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            for tag in $(git tag --points-at "$GITHUB_SHA" --sort=-version:refname); do
+              if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "tag=$tag" >> "$GITHUB_OUTPUT"
+                break
+              fi
+            done
+          fi
+
+      - name: Create the next patch version
+        id: version
+        if: steps.existing.outputs.tag == ''
+        uses: mathieudutour/github-tag-action@af99e60ce8132224b8e6ebab5023449fe256ed46 # v7
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          commit_sha: ${{ github.sha }}
+          release_branches: '^main$'
+          force_bump: patch
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -59,17 +116,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check whether this is the current release
+        id: current
+        shell: bash
+        env:
+          TAG: ${{ steps.existing.outputs.tag || steps.version.outputs.new_tag }}
+        run: |
+          git fetch origin main --tags
+          newest=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n '1p')
+          if [[ "$(git rev-parse origin/main)" == "$GITHUB_SHA" && "$TAG" == "$newest" ]]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Generate image metadata
         id: metadata
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=${{ steps.current.outputs.current == 'true' }}
           tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},value=${{ steps.existing.outputs.tag || steps.version.outputs.new_tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.existing.outputs.tag || steps.version.outputs.new_tag }},enable=${{ steps.current.outputs.current == 'true' }}
+            type=semver,pattern={{major}},value=${{ steps.existing.outputs.tag || steps.version.outputs.new_tag }},enable=${{ steps.current.outputs.current == 'true' }}
             type=sha,prefix=sha-
+            type=raw,value=main,enable=${{ steps.current.outputs.current == 'true' }}
 
       - name: Build and publish
         uses: docker/build-push-action@v7
@@ -79,7 +149,7 @@ jobs:
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=final
+          cache-to: type=gha,mode=max,scope=final
           provenance: mode=max
           sbom: true

@@ -19,16 +19,28 @@ RUN pip install --no-cache-dir \
         girder-client==3.2.14
 
 WORKDIR /opt/cli
+ENTRYPOINT ["python", "/opt/cli/cli_list.py"]
 
 FROM runtime AS test
 
-RUN pip install --no-cache-dir pytest==8.3.5
+RUN pip install --no-cache-dir pytest==8.3.5 pydicom==3.0.1
 COPY . /opt/cli/
 RUN python -m pytest -q \
     && python /opt/cli/cli_list.py --list_cli >/dev/null
 
+FROM runtime AS examples
+
+COPY cli_list.py /opt/cli/
+COPY examples/cli_list.json /opt/cli/cli_list.json
+COPY volview_cli_base /opt/cli/volview_cli_base/
+COPY MaskedMedianFilter /opt/cli/MaskedMedianFilter/
+COPY MedianFilter /opt/cli/MedianFilter/
+COPY OtsuSegmentation /opt/cli/OtsuSegmentation/
+COPY ThresholdSegmentation /opt/cli/ThresholdSegmentation/
+
 FROM runtime AS final
 
-COPY . /opt/cli/
-
-ENTRYPOINT ["python", "/opt/cli/cli_list.py"]
+COPY cli_list.py cli_list.json /opt/cli/
+COPY volview_cli_base /opt/cli/volview_cli_base/
+COPY GenerateSegmentRulers /opt/cli/GenerateSegmentRulers/
+COPY ExportSegmentStatistics /opt/cli/ExportSegmentStatistics/

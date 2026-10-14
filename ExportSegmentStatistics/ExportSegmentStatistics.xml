@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<executable>
+  <category>Radiology</category>
+  <title>Export Segment Statistics</title>
+  <description>Export saved ruler lengths longest first, segment volumes, and underlay image statistics as CSV.</description>
+  <version>0.1.0</version>
+  <license>MIT</license>
+  <contributor>VolView</contributor>
+  <parameters>
+    <label>Input and output</label>
+    <description>Existing segment measurements and their downloadable report.</description>
+    <image reference="_girder_id_">
+      <name>inputVolume</name>
+      <label>Input Volume</label>
+      <channel>input</channel>
+      <description>Source volume for per-segment minimum, maximum, mean, median, population standard deviation, and sum.</description>
+      <index>0</index>
+    </image>
+    <image type="label" reference="_girder_id_" multiple="true">
+      <name>inputLabelmap</name>
+      <label>Input Label Map</label>
+      <channel>input</channel>
+      <description>Painted scalar integer label maps. Embedded segment names match ruler labels.</description>
+      <index>1</index>
+    </image>
+    <file fileExtensions=".csv">
+      <name>outputReport</name>
+      <label>Measurement Report</label>
+      <channel>output</channel>
+      <description>CSV of segment volumes, source-image statistics, warnings, and numbered ruler lengths up to the largest ruler group.</description>
+      <index>2</index>
+    </file>
+  </parameters>
+  <parameters>
+    <label>Existing annotations</label>
+    <description>Saved rulers associated with the input volume.</description>
+    <file fileExtensions=".annotations.json" reference="_girder_id_">
+      <name>inputAnnotations</name>
+      <label>Input Annotations</label>
+      <channel>input</channel>
+      <longflag>inputAnnotations</longflag>
+      <description>Optional saved rulers labeled with their segment name.</description>
+      <default></default>
+    </file>
+  </parameters>
+  <parameters advanced="true">
+    <label>Girder API</label>
+    <description>Server access injected by slicer_cli_web; not shown to users.</description>
+    <string>
+      <name>girderApiUrl</name>
+      <longflag>girderApiUrl</longflag>
+      <label>Girder API URL</label>
+      <description>Girder API URL (injected by slicer_cli_web).</description>
+      <default></default>
+    </string>
+    <string>
+      <name>girderToken</name>
+      <longflag>girderToken</longflag>
+      <label>Girder Token</label>
+      <description>Girder token (injected by slicer_cli_web).</description>
+      <default></default>
+    </string>
+  </parameters>
+</executable>

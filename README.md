@@ -1,34 +1,44 @@
 # VolView Radiology CLI
 
-A small Docker image containing Slicer Execution Model command-line modules
-used to drive Girder-VolView radiology processing during development and
-end-to-end testing. It is reference and example infrastructure for the
-Girder-VolView integration.
+A Docker image containing Slicer Execution Model jobs for Girder-VolView
+segment measurements.
 
 The image exposes these tasks through the `slicer_cli_web` `--list_cli`
 interface:
 
-- Otsu Segmentation
-- Threshold Segmentation
-- Median Filter
-- Masked Median Filter
-- Region of Interest Rulers
+- Generate Segment Rulers
+- Export Segment Statistics
+
+Development examples are packaged separately in `volview-cli-examples`:
+Otsu Segmentation, Threshold Segmentation, Median Filter, and Masked Median
+Filter. Register that image only where those example jobs are wanted.
 
 ## Build and inspect
 
 ```sh
 docker build -t volview-radiology-cli:latest .
 docker run --rm volview-radiology-cli:latest --list_cli
+
+docker build --target examples -t volview-cli-examples:latest .
+docker run --rm volview-cli-examples:latest --list_cli
 ```
 
 ## Published image
 
-Release tags publish the image to the GitHub Container Registry. A tag such as
-`v0.1.0` produces `ghcr.io/paulhax/volview-radiology-cli:0.1.0` and `:latest`.
-Pull an immutable version for a deployment:
+Every passing update to `main` creates the next patch tag and publishes the
+radiology image to GitHub Container Registry. Merging a PR approves the release.
+PR checks build and test both images without publishing.
+
+A release such as `v0.2.1` publishes `ghcr.io/paulhax/volview-radiology-cli:0.2.1`
+and a `sha-<commit>` tag. The current main release also updates `:main`, `:latest`,
+and its major/minor aliases. Reruns reuse the assigned version; older runs do not
+update those aliases.
+Push an explicit `vMAJOR.MINOR.PATCH` tag for a minor or major release.
+The examples image is built locally for development and E2E testing.
+Select a numbered version for deployment, or pin its digest for exact repeatability:
 
 ```sh
-docker pull ghcr.io/paulhax/volview-radiology-cli:0.1.0
+docker pull ghcr.io/paulhax/volview-radiology-cli:0.2.1
 ```
 
 The package must be public for anonymous pulls. If it is private, configure the
@@ -41,8 +51,12 @@ provision YAML and re-run provisioning:
 
 ```yaml
 slicer-cli-image:
-  - ghcr.io/paulhax/volview-radiology-cli:0.1.0
+  - ghcr.io/paulhax/volview-radiology-cli:0.2.1
 ```
+
+The radiology image name stays the same and exposes only the two segment jobs.
+Reimporting an updated tag removes its old example tasks. When changing version
+tags, remove the retired image registration so its tasks do not remain listed.
 
 See the Girder-VolView
 [custom Slicer CLI guide](https://github.com/DigitalSlideArchive/girder_volview/blob/main/docs/custom-slicer-clis.md)
@@ -53,14 +67,16 @@ in the Girder-VolView
 development-stack `.env` file to that checkout, then run `script/deploy` (or
 `script/ensure-radiology-cli`). The script builds the local image when needed
 and registers its declared tasks with `slicer_cli_web`.
+Use `script/ensure-radiology-cli --examples` to register the development image;
+the E2E harness does this explicitly.
 
-See the [Girder-VolView development documentation](https://github.com/DigitalSlideArchive/girder_volview/blob/main/docs/admin.md#local-reference-image)
+See the [Girder-VolView development documentation](https://github.com/DigitalSlideArchive/girder_volview/blob/main/docs/development.md#slicer-cli-images)
 for the complete setup.
 
 ## Creating a CLI
 
 Use the existing task whose input and output most closely match the new task as
-the starting point. A task named `ExampleTask` has three required pieces:
+the starting point. To add a task named `ExampleTask`:
 
 1. Create `ExampleTask/ExampleTask.xml`. The Slicer Execution Model XML
    declares the title, parameters, and input/output channels that VolView and
@@ -70,84 +86,67 @@ the starting point. A task named `ExampleTask` has three required pieces:
    with `--xml`, parse the declared arguments with `CLIArgumentParser`, and
    write every declared output. Use `volview_cli_base.girder_input` to resolve
    Girder-backed inputs; use `assemble` for multi-file image series.
-3. Add `"ExampleTask": {"type": "python"}` to `cli_list.json`. The entry
+3. Add `"ExampleTask": {"type": "python"}` to `examples/cli_list.json`. The entry
    name must match both the directory and Python/XML basenames.
+4. Add `COPY ExampleTask /opt/cli/ExampleTask/` to the Dockerfile's `examples`
+   target.
 
 Build the image and verify both the registration manifest and task interface:
 
 ```sh
-docker build -t volview-radiology-cli:latest .
-docker run --rm volview-radiology-cli:latest --list_cli
-docker run --rm volview-radiology-cli:latest ExampleTask --xml
+docker build --target examples -t volview-cli-examples:latest .
+docker run --rm volview-cli-examples:latest --list_cli
+docker run --rm volview-cli-examples:latest ExampleTask --xml
 pytest -q
 ```
 
 With `CLI_REPO` pointed at this checkout, the Girder-VolView
-`script/ensure-radiology-cli` command rebuilds the image when needed and
-registers every task declared in `cli_list.json`.
+`script/ensure-radiology-cli --examples` command builds a missing image and
+registers every task declared in `examples/cli_list.json`. Rebuild an existing
+image after changing its tasks.
 
-## Region of Interest Rulers
+## Segment jobs
 
-The **Region of Interest Rulers** task takes every painted label map attached
-to the open image plus whatever rulers are already on the image, and returns
-the rulers that were missing -- applied back onto the image -- and a
-downloadable CSV.
+Both jobs accept all painted label maps and optional saved annotations.
+Embedded `.seg.nrrd` segment names match ruler labels; unnamed segments use
+`Segment <value>`.
 
-For each nonzero label value it finds the axial slice where the region is
-widest and measures two in-plane diameters there:
+### Generate Segment Rulers
 
-- `LD` -- the longest chord across the region on that slice.
-- `SAD` -- the widest extent perpendicular to `LD`.
+Adds two rulers on the image-aligned axial slice with the greatest long-axis
+diameter: the longest chord and the widest extent perpendicular to it.
+Both rulers use the segment name as their label. Any saved ruler associated
+with a segment suppresses generation for that segment.
 
-Axial slices are the ones stacked along the image axis nearest to
-superior-inferior, so a generated plane stays aligned to an image axis even for
-an obliquely acquired volume, as the client requires. `LD` and `SAD` are label
-suffixes, not a claim about what the regions are; they are ordinary planar
-shape descriptors.
+Ruler labels match segment names literally; suffixes have no special meaning.
 
-Rulers are labeled `<segment name> <kind>`, as in `n2 LD`. Embedded `.seg.nrrd`
-segment names supply the region names; other label-map formats receive
-deterministic names such as `Region 1`. A region that already carries a ruler
-keeps it, so re-running after an annotator fills in the gaps generates nothing.
-The output is additive: it carries only the rulers this run created, and a
-label the input already defines keeps its own style.
+The output contains only generated rulers. Saved annotations and label styles
+are preserved. Use **Export Segment Statistics** for the CSV.
 
-The CSV has one row per painted region and one row per ruler no region claims:
-`input_image_path`, `roi_name`, `labelmap_index`, `ld_length_mm`,
-`sad_length_mm`, `volume_mm3`, and `warnings`. `input_image_path` names the
-Girder item holding the input image or DICOM series, never the temporary
-label-map or annotation inputs. `labelmap_index` is the 1-based position of
-the input labelmap that produced the row (blank for a row generated from a
-ruler no labelmap claims), so two regions named alike in different label maps
-still resolve to distinct rows. `warnings` is empty on a clean row and
-otherwise explains the problem in plain language -- unmatched or unparsed
-ruler labels, duplicate measurements or segment names, empty segments, and
-measurements neither placed nor derivable. The audit is case-insensitive and
-tolerant of separators, so an existing `n2-ld` joins to segment `n2` rather
-than being reported as an orphan.
+### Export Segment Statistics
 
-The annotations input uses a `<longflag>` rather than an `<index>`, which makes
-it optional: an image whose regions carry no rulers yet is the task's primary
-case, and VolView binds an annotations input only once the image has a finished
-annotation.
+Writes one CSV row per painted segment and unmatched ruler group:
+
+- `input_image_path`: Girder item path; `segment_name`: segment name.
+- `labelmap_index`: 1-based input map position, blank for unmatched groups.
+- `volume_mm3`: segment volume; `warnings`: missing or invalid measurements.
+- `intensity_min`, `intensity_max`, `intensity_mean`, `intensity_median`,
+  `intensity_stddev`, `intensity_sum`: underlay statistics within the segment.
+- `ruler_1_length_mm`, `ruler_2_length_mm`, etc.: ruler lengths, longest first.
+  Columns extend to the largest ruler count.
+
+Intensities use decoded voxels from the active view's base image.
+Standard deviation is population standard deviation; sum is not volume-weighted.
+
+Image and segmentation must share the same voxel grid. Unmatched ruler groups
+have blank statistics. Invalid image values within a segment leave its
+statistics blank with a warning.
 
 ### Limitations
 
-Each labelmap input file is treated as one complete label map. A multi-file
-DICOM series is not supported for the labelmap input -- feeding it two or more
-files from the same series would silently measure it as several one-slice
-label maps rather than the intended volume, so the task raises instead of
-producing that result. Use a single-file format such as `.seg.nrrd`, or a
-single DICOM file, for each label map.
-
-When two segmentation maps carry a segment with the same name, the rulers this
-task generates for both share that name. Ruler generation is not changed to
-work around this: the CSV's duplicate-name warning already flags it, and the
-`labelmap_index` column disambiguates which map each row came from.
-
-A file whose `SeriesInstanceUID` can't be read is excluded from series
-grouping rather than failing closed, so corrupt or non-conformant DICOM
-series may evade detection.
+- Each segmentation input must be a complete scalar integer volume, such as
+  `.seg.nrrd`.
+- Use distinct segment names across inputs to avoid ambiguous ruler matching.
 
 ## DICOM slice inputs
 
@@ -166,7 +165,7 @@ partial volume.
 ## Tests
 
 ```sh
-pytest -q
+docker build --target test .
 ```
 
 ## License
