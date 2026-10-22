@@ -31,8 +31,15 @@ def main(args):
         args.inputVolume, api_url=api_url, token=token
     )
     underlay = assemble(resolve_inputs_to_local_paths(args.inputVolume, api_url, token))
-    labelmaps = read_labelmaps(args.inputLabelmap, api_url, token, underlay=underlay)
-    del underlay
+    pet_input = getattr(args, "inputPETVolume", "")
+    pet = (
+        assemble(resolve_inputs_to_local_paths(pet_input, api_url, token))
+        if pet_input else None
+    )
+    labelmaps = read_labelmaps(
+        args.inputLabelmap, api_url, token, underlay=underlay, pet=pet
+    )
+    del underlay, pet
     annotations = read_input_annotations(
         getattr(args, "inputAnnotations", ""), api_url, token
     )
@@ -54,6 +61,7 @@ def main(args):
             segment_name_counts=name_counts,
             labelmap_index=index,
             intensity_stats=labelmap["intensity_stats"],
+            pet_intensity_stats=labelmap["pet_intensity_stats"],
         )
     ]
     rows.extend(

@@ -132,6 +132,9 @@ Writes one CSV row per painted segment and unmatched ruler group:
 - `volume_mm3`: segment volume; `warnings`: missing or invalid measurements.
 - `intensity_min`, `intensity_max`, `intensity_mean`, `intensity_median`,
   `intensity_stddev`, `intensity_sum`: underlay statistics within the segment.
+- `pet_intensity_min`, `pet_intensity_max`, `pet_intensity_mean`,
+  `pet_intensity_median`, `pet_intensity_stddev`, `pet_intensity_sum`: PET layer
+  statistics within the same segment, blank when no PET layer is supplied.
 - `ruler_1_length_mm`, `ruler_2_length_mm`, etc.: ruler lengths, longest first.
   Columns extend to the largest ruler count.
 
@@ -141,6 +144,23 @@ Standard deviation is population standard deviation; sum is not volume-weighted.
 Image and segmentation must share the same voxel grid. Unmatched ruler groups
 have blank statistics. Invalid image values within a segment leave its
 statistics blank with a warning.
+
+VolView binds the first scalar image input to the base image and subsequent
+scalar image inputs to attached layers in order. This report uses the first
+attached layer as its optional PET input. Each input is one complete volume,
+including every slice of a multi-file DICOM series.
+This report declares `reference="_girder_id_"` and assembles each input's file
+IDs separately. Custom CLIs must likewise handle a file list with that
+declaration or `multiple="true"`; ordinary single-file image inputs cannot
+receive a multi-file series.
+The optional PET input (`--inputPETVolume`) may have different spacing, origin,
+dimensions, and orientation. It must already be registered to the base image
+in physical coordinates. PET values are linearly interpolated at segmentation
+voxel centers. Centers outside the PET voxel-center extent are excluded with
+a warning; a segment with no PET coverage has blank PET statistics. Invalid PET
+values leave only that segment's PET statistics blank. Values use the decoded
+image units, including DICOM rescale; no SUV conversion is performed. PET sum
+adds interpolated values on the segmentation grid.
 
 ### Limitations
 

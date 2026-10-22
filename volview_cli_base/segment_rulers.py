@@ -5,7 +5,9 @@ from collections import Counter
 
 from volview_cli_base.annotations import SCHEMA_VERSION, SPACE
 from volview_cli_base.paths import ensure_parent_directory
-from volview_cli_base.segment_report import INTENSITY_COLUMNS, format_float, segment_names
+from volview_cli_base.segment_report import (
+    INTENSITY_COLUMNS, PET_INTENSITY_COLUMNS, format_float, segment_names,
+)
 
 LD = "LD"
 SAD = "SAD"
@@ -18,6 +20,7 @@ CSV_COLUMNS = (
     "volume_mm3",
     "warnings",
     *INTENSITY_COLUMNS,
+    *PET_INTENSITY_COLUMNS,
 )
 
 
@@ -403,6 +406,7 @@ def segment_rows(
     segment_name_counts=None,
     labelmap_index=None,
     intensity_stats=None,
+    pet_intensity_stats=None,
 ):
     """Join saved rulers to painted segments."""
     name_counts = (
@@ -424,10 +428,11 @@ def segment_rows(
         if not voxel_count:
             warnings.append("Segmentation label %r has no voxels." % segment_name)
         row["volume_mm3"] = format_float(voxel_count * voxel_volume_mm3)
-        statistics, warning = (intensity_stats or {}).get(label_value, ({}, ""))
-        row.update(statistics)
-        if warning:
-            warnings.append(warning)
+        for summaries in (intensity_stats, pet_intensity_stats):
+            statistics, warning = (summaries or {}).get(label_value, ({}, ""))
+            row.update(statistics)
+            if warning:
+                warnings.append(warning)
         row["warnings"] = " ".join(warnings)
         rows.append(row)
     return rows

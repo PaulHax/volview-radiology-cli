@@ -2,7 +2,7 @@
 <executable>
   <category>Radiology</category>
   <title>Export Segment Statistics</title>
-  <description>Export saved ruler lengths longest first, segment volumes, and underlay image statistics as CSV.</description>
+  <description>Export saved ruler lengths longest first, segment volumes, and base image and optional PET statistics as CSV.</description>
   <version>0.1.0</version>
   <license>MIT</license>
   <contributor>VolView</contributor>
@@ -27,9 +27,21 @@
       <name>outputReport</name>
       <label>Measurement Report</label>
       <channel>output</channel>
-      <description>CSV of segment volumes, source-image statistics, warnings, and numbered ruler lengths up to the largest ruler group.</description>
+      <description>CSV of segment volumes, base image and PET statistics, warnings, and numbered ruler lengths up to the largest ruler group.</description>
       <index>2</index>
     </file>
+  </parameters>
+  <parameters>
+    <label>PET layer</label>
+    <description>Optional PET image registered to the base image in physical coordinates.</description>
+    <image type="scalar" reference="_girder_id_">
+      <name>inputPETVolume</name>
+      <label>PET Volume</label>
+      <channel>input</channel>
+      <longflag>inputPETVolume</longflag>
+      <description>Optional PET volume supplied by the first attached image layer. Intensities are linearly sampled at segment voxel centers in physical coordinates.</description>
+      <default></default>
+    </image>
   </parameters>
   <parameters>
     <label>Existing annotations</label>
