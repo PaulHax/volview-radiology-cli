@@ -13,6 +13,7 @@ the DICOM metadata determines the geometry.
 """
 
 import os
+import tempfile
 
 import itk
 
@@ -59,52 +60,44 @@ def dicom_series_uid(path):
     return str(dictionary["0020|000e"]).strip() or None
 
 
-def _common_directory(paths):
-    absolute = [os.path.abspath(str(p)) for p in paths]
-    directories = {os.path.dirname(p) for p in absolute}
-    if len(directories) == 1:
-        return directories.pop()
-    return os.path.commonpath(absolute)
-
-
 def _read_dicom_series(paths):
     """Metadata-sorted read of a multi-file DICOM series.
 
-    ``GDCMSeriesFileNames`` scans the files' shared directory and returns each
-    series' file names already ordered by slice position, so the reader stacks
-    them with correct z-spacing/orientation regardless of input order. More than
-    one series is an ambiguous input: rather than silently keep the first and
-    drop the rest, fail closed. When the directory scan finds no series (unusual),
-    fall back to the given files in a stable order so a result is still produced
-    rather than nothing.
+    ``GDCMSeriesFileNames`` discovers series by directory. Temporary symlinks
+    restrict discovery to the supplied files without copying voxel data, even
+    when those files share directories with other series or span directories.
+    More than one supplied series is ambiguous and must be rejected.
     """
-    directory = _common_directory(paths)
+    paths = list(dict.fromkeys(os.path.abspath(path) for path in paths))
+    with tempfile.TemporaryDirectory(prefix="dicom-series-") as directory:
+        for index, path in enumerate(paths):
+            os.symlink(path, os.path.join(directory, f"{index}.dcm"))
 
-    names = itk.GDCMSeriesFileNames.New()
-    names.SetUseSeriesDetails(True)
-    names.SetDirectory(directory)
-    series_uids = list(names.GetSeriesUIDs())
-    if len(series_uids) > 1:
-        raise ValueError(
-            "assemble: input spans %d DICOM series (%s); expected exactly one. "
-            "Submit a single series per volume so slices are not silently dropped."
-            % (len(series_uids), ", ".join(series_uids))
-        )
-    if series_uids:
-        ordered = list(names.GetFileNames(series_uids[0]))
-    else:
-        ordered = [str(p) for p in sorted(paths)]
+        names = itk.GDCMSeriesFileNames.New()
+        names.SetUseSeriesDetails(True)
+        names.SetDirectory(directory)
+        series_uids = list(names.GetSeriesUIDs())
+        if len(series_uids) > 1:
+            raise ValueError(
+                "assemble: input spans %d DICOM series (%s); expected exactly one. "
+                "Submit a single series per volume so slices are not silently dropped."
+                % (len(series_uids), ", ".join(series_uids))
+            )
+        if series_uids:
+            ordered = list(names.GetFileNames(series_uids[0]))
+        else:
+            ordered = [str(p) for p in sorted(paths)]
 
-    image_type = itk.Image[_SERIES_PIXEL_TYPE, _SERIES_DIMENSION]
-    reader = itk.ImageSeriesReader[image_type].New()
-    reader.SetImageIO(itk.GDCMImageIO.New())
-    reader.SetFileNames(ordered)
-    # Keep the true acquisition frame (some ITK versions default to forcing an
-    # orthogonal direction, which silently rewrites oblique geometry).
-    if hasattr(reader, "ForceOrthogonalDirectionOff"):
-        reader.ForceOrthogonalDirectionOff()
-    reader.Update()
-    return reader.GetOutput()
+        image_type = itk.Image[_SERIES_PIXEL_TYPE, _SERIES_DIMENSION]
+        reader = itk.ImageSeriesReader[image_type].New()
+        reader.SetImageIO(itk.GDCMImageIO.New())
+        reader.SetFileNames(ordered)
+        # Keep the true acquisition frame (some ITK versions default to forcing an
+        # orthogonal direction, which silently rewrites oblique geometry).
+        if hasattr(reader, "ForceOrthogonalDirectionOff"):
+            reader.ForceOrthogonalDirectionOff()
+        reader.Update()
+        return reader.GetOutput()
 
 
 def assemble(local_paths):
