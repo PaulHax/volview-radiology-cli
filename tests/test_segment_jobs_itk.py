@@ -2,6 +2,7 @@
 
 import csv
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -912,7 +913,10 @@ def test_report_pet_dicom_applies_rescale_and_metadata_slice_order(tmp_path, dic
     assert all(path.read_bytes() == original for path, original in inputs.items())
 
 
-def test_report_keeps_multifile_ct_and_pet_as_separate_volume_inputs(tmp_path, dicom_fixtures):
+@pytest.mark.parametrize("layout", ["separate", "shared", "split", "duplicates"])
+def test_report_keeps_multifile_ct_and_pet_as_separate_volume_inputs(
+    tmp_path, dicom_fixtures, layout,
+):
     from fixtures.generate_dicom import _write_slice
 
     for z, pixels in enumerate([
@@ -927,6 +931,30 @@ def test_report_keeps_multifile_ct_and_pet_as_separate_volume_inputs(tmp_path, d
         )
     ct_paths = sorted((tmp_path / "ct").glob("*.dcm"), reverse=True)
     pet_paths = sorted((dicom_fixtures / "dicom_rescale").glob("*.dcm"))
+    _write_slice(
+        tmp_path, "ct", "unlisted.dcm", [[1000] * 3] * 2,
+        patient_id="VV-REPORT", instance=3, position=(10.0, 20.0, 36.0),
+        spacing=(2.0, 0.5, 3.0), slope=2, intercept=-100,
+    )
+    if layout in ("shared", "split"):
+        arranged = {}
+        for prefix, paths in (("ct", ct_paths), ("pet", pet_paths)):
+            arranged[prefix] = []
+            for index, path in enumerate(paths):
+                directory = tmp_path / (
+                    "shared" if layout == "shared" else f"slice-{1 - index}"
+                )
+                directory.mkdir(exist_ok=True)
+                destination = directory / f"{prefix}-{1 - index}.dcm"
+                shutil.copyfile(path, destination)
+                arranged[prefix].append(destination)
+        ct_paths, pet_paths = arranged["ct"][::-1], arranged["pet"][::-1]
+        shutil.copyfile(
+            tmp_path / "ct" / "unlisted.dcm", ct_paths[0].parent / "unlisted.dcm",
+        )
+    if layout == "duplicates":
+        ct_paths.insert(1, ct_paths[0])
+        pet_paths.insert(1, pet_paths[0])
     labels = itk.image_from_array(np.array([
         [[1, 0, 0], [0, 1, 0]], [[0, 1, 0], [0, 0, 1]],
     ], dtype=np.uint8))
