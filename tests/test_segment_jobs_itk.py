@@ -21,9 +21,11 @@ INTENSITY_COLUMNS = (
     "intensity_min", "intensity_max", "intensity_mean",
     "intensity_median", "intensity_stddev", "intensity_sum",
 )
+PET_INTENSITY_COLUMNS = tuple(f"pet_{column}" for column in INTENSITY_COLUMNS)
 CSV_COLUMNS = (
     "input_image_path", "segment_name", "labelmap_index", "volume_mm3", "warnings",
     *INTENSITY_COLUMNS,
+    *PET_INTENSITY_COLUMNS,
 )
 
 
@@ -96,7 +98,10 @@ def save_annotations(tmp_path, rulers, filename="input.annotations.json"):
     return path
 
 
-def run_report(tmp_path, labelmaps, annotations=None, filename="report.csv", volume=None):
+def run_report(
+    tmp_path, labelmaps, annotations=None, filename="report.csv", volume=None,
+    pet_volume=None,
+):
     output = tmp_path / filename
     arguments = [
         volume or tmp_path / "original-volume.nrrd",
@@ -105,6 +110,8 @@ def run_report(tmp_path, labelmaps, annotations=None, filename="report.csv", vol
     ]
     if annotations is not None:
         arguments.extend(["--inputAnnotations", annotations])
+    if pet_volume is not None:
+        arguments.extend(["--inputPETVolume", pet_volume])
     run_cli("ExportSegmentStatistics", *arguments)
     with output.open(encoding="utf-8", newline="") as stream:
         reader = csv.DictReader(stream)
@@ -251,7 +258,9 @@ def test_report_without_annotations_does_not_derive_rulers(tmp_path):
 
     assert row["volume_mm3"] == "36"
     assert list(row) == list(CSV_COLUMNS)
+    assert all(row[column] == "" for column in PET_INTENSITY_COLUMNS)
     assert "No rulers" in row["warnings"]
+    assert "PET" not in row["warnings"]
     assert not list(tmp_path.glob("*.annotations.json"))
 
 
@@ -354,6 +363,13 @@ def test_both_jobs_are_discoverable_with_distinct_outputs():
         assert existing.findtext("longflag") == "inputAnnotations"
         assert existing.find("default") is not None
         assert existing.findtext("index") is None
+        if task == "ExportSegmentStatistics":
+            pet_volume = next(parameter for parameter in parameters
+                              if parameter.findtext("name") == "inputPETVolume")
+            assert pet_volume.findtext("longflag") == "inputPETVolume"
+            assert pet_volume.findtext("channel") == "input"
+            assert pet_volume.find("default") is not None
+            assert pet_volume.findtext("index") is None
 
 
 @pytest.mark.parametrize("suffix", ["LD", "SAD"])
@@ -671,6 +687,265 @@ def test_report_intensities_apply_dicom_rescale_and_metadata_slice_order(tmp_pat
 
     # Stored values 3, 23, 103, 123 become -8.75, -3.75, 16.25, 21.25.
     assert [float(row[column]) for column in INTENSITY_COLUMNS] == pytest.approx(
+        [-8.75, 21.25, 6.25, 6.25, 162.5 ** 0.5, 25], rel=1e-11,
+    )
+    assert row["volume_mm3"] == "12"
+
+
+def save_pet_volume(tmp_path, values, *, origin=None, spacing=None, direction=None):
+    image = itk.image_from_array(np.asarray(values, dtype=np.float64))
+    image.CopyInformation(itk.imread(str(tmp_path / "original-volume.nrrd")))
+    if origin is not None:
+        image.SetOrigin(origin)
+    if spacing is not None:
+        image.SetSpacing(spacing)
+    if direction is not None:
+        image.SetDirection(itk.matrix_from_array(np.asarray(direction, dtype=np.float64)))
+    path = tmp_path / "pet-volume.nrrd"
+    itk.imwrite(image, str(path))
+    return path
+
+
+def test_report_adds_pet_statistics_across_maps_without_changing_ct_or_inputs(tmp_path):
+    source = np.array([
+        [[-2.0, 100.0, 0.0], [40.0, 4.0, 6.0]],
+        [[20.0, 80.0, 11.0], [150.0, 0.0, 999.0]],
+    ])
+    first = np.array([[[5, 0, 5], [0, 5, 5]], [[0, 0, 9], [0, 0, 0]]])
+    second = np.array([[[0, 5, 0], [5, 0, 0]], [[5, 5, 9], [9, 0, 0]]])
+    paths = save_intensity_inputs(tmp_path, source, [
+        (first, {5: "shared", 9: "single"}),
+        (second, {5: "shared", 9: "shared"}),
+    ])
+    pet_path = save_pet_volume(tmp_path, np.array([
+        [[-3.0, 5.0, 0.0], [17.0, 2.0, 8.0]],
+        [[23.0, 4.0, 41.0], [7.0, 0.0, 999.0]],
+    ]))
+    annotations = save_annotations(tmp_path, [
+        saved_ruler(name, length, axis=axis)
+        for name in ("shared", "single", "outside")
+        for length, axis in [(6, 0), (2, 1)]
+    ])
+    inputs = {path: path.read_bytes() for path in [
+        *paths, annotations, tmp_path / "original-volume.nrrd", pet_path,
+    ]}
+    baseline = run_report(tmp_path, paths, annotations, filename="ct.csv")
+    before_files = set(tmp_path.iterdir())
+
+    rows = run_report(tmp_path, paths, annotations, pet_volume=pet_path)
+
+    assert [row["segment_name"] for row in rows] == [
+        "shared", "single", "shared", "shared", "outside",
+    ]
+    expected = [
+        (-3, 8, 1.75, 1, 16.1875 ** 0.5, 7),
+        (41, 41, 41, 41, 0, 41),
+        (4, 23, 12.25, 11, 64.6875 ** 0.5, 49),
+        (7, 41, 24, 24, 17, 48),
+    ]
+    for row, statistics in zip(rows, expected):
+        assert [float(row[column]) for column in PET_INTENSITY_COLUMNS] == pytest.approx(
+            statistics, rel=1e-11,
+        )
+    for row, original in zip(rows, baseline):
+        assert {column: value for column, value in row.items()
+                if column not in PET_INTENSITY_COLUMNS} == {
+            column: value for column, value in original.items()
+            if column not in PET_INTENSITY_COLUMNS
+        }
+    assert all(rows[-1][column] == "" for column in PET_INTENSITY_COLUMNS)
+    assert all(path.read_bytes() == before for path, before in inputs.items())
+    assert set(tmp_path.iterdir()) - before_files == {tmp_path / "report.csv"}
+
+
+@pytest.mark.parametrize("direction,origin,shape", [
+    (np.eye(3), [1229.0, -5.0, 5.0], (4, 3, 5)),
+    (np.array([[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+     [1229.0, 0.0, 5.0], (4, 5, 4)),
+])
+def test_report_interpolates_pet_in_world_coordinates(tmp_path, direction, origin, shape):
+    source = np.arange(12, dtype=np.float64).reshape(2, 2, 3)
+    labels = np.zeros(source.shape, dtype=np.uint8)
+    labels[0, 0, 0] = labels[0, 1, 1] = labels[1, 1, 2] = 1
+    paths = save_intensity_inputs(tmp_path, source, [(labels, {1: "target"})])
+    indices = np.indices(shape).reshape(3, -1)[::-1]
+    world = np.asarray(origin)[:, None] + direction @ (indices * 2.0)
+    pet = (2 * (world[0] - 1229) + 3 * (world[1] + 5)
+           + 5 * (world[2] - 5)).reshape(shape)
+    pet_path = save_pet_volume(
+        tmp_path, pet, origin=origin, spacing=[2.0, 2.0, 2.0], direction=direction,
+    )
+    baseline, = run_report(tmp_path, paths, filename="ct.csv")
+
+    row, = run_report(tmp_path, paths, pet_volume=pet_path)
+
+    # The segment centers have PET intensities 18, 15.5, and 32 in world space.
+    assert [float(row[column]) for column in PET_INTENSITY_COLUMNS] == pytest.approx(
+        [15.5, 32, 65.5 / 3, 18, (949 / 18) ** 0.5, 65.5], rel=1e-11,
+    )
+    assert [row[column] for column in INTENSITY_COLUMNS] == [
+        baseline[column] for column in INTENSITY_COLUMNS
+    ]
+    assert row["warnings"] == baseline["warnings"]
+    assert row["volume_mm3"] == "9"
+
+
+def test_report_excludes_uncovered_pet_centers_and_flags_affected_segments(tmp_path):
+    source = np.array([[[100.0, 101.0, 102.0, 103.0, 104.0, 105.0]]])
+    paths = save_intensity_inputs(tmp_path, source, [
+        (np.array([[[1, 1, 1, 3, 2, 2]]]), {1: "partial", 2: "outside", 3: "covered"}),
+    ])
+    pet_path = save_pet_volume(
+        tmp_path, [[[10.0, 20.0, 30.0]]], origin=[1234.0, -3.5, 6.0],
+    )
+    baseline = run_report(tmp_path, paths, filename="ct.csv")
+
+    rows = run_report(tmp_path, paths, pet_volume=pet_path)
+
+    assert [row["segment_name"] for row in rows] == ["partial", "outside", "covered"]
+    assert [float(rows[0][column]) for column in PET_INTENSITY_COLUMNS] == [
+        10, 20, 15, 15, 5, 30,
+    ]
+    assert all(rows[1][column] == "" for column in PET_INTENSITY_COLUMNS)
+    assert [float(rows[2][column]) for column in PET_INTENSITY_COLUMNS] == [
+        30, 30, 30, 30, 0, 30,
+    ]
+    for row in rows[:2]:
+        assert "PET" in row["warnings"]
+        assert "outside" in row["warnings"].lower()
+    assert "PET" not in rows[2]["warnings"]
+    for row, original in zip(rows, baseline):
+        assert [row[column] for column in INTENSITY_COLUMNS] == [
+            original[column] for column in INTENSITY_COLUMNS
+        ]
+        assert row["volume_mm3"] == original["volume_mm3"]
+
+
+@pytest.mark.parametrize("invalid", [np.nan, np.inf, -np.inf])
+def test_report_invalid_pet_values_only_blank_the_affected_segment(tmp_path, invalid):
+    source = np.array([[[20.0, 40.0, 60.0, 80.0, 100.0]]])
+    paths = save_intensity_inputs(tmp_path, source, [
+        (np.array([[[1, 1, 2, 2, 0]]]), {1: "valid", 2: "invalid"}),
+    ])
+    pet_path = save_pet_volume(tmp_path, [[[2.0, 4.0, invalid, 8.0, invalid]]])
+    baseline = run_report(tmp_path, paths, filename="ct.csv")
+    inputs = {path: path.read_bytes() for path in [
+        *paths, tmp_path / "original-volume.nrrd", pet_path,
+    ]}
+
+    rows = run_report(tmp_path, paths, pet_volume=pet_path)
+
+    assert [float(rows[0][column]) for column in PET_INTENSITY_COLUMNS] == [2, 4, 3, 3, 1, 6]
+    assert rows[0]["warnings"] == baseline[0]["warnings"]
+    assert all(rows[1][column] == "" for column in PET_INTENSITY_COLUMNS)
+    assert "PET" in rows[1]["warnings"]
+    assert "non-finite" in rows[1]["warnings"]
+    for row, original in zip(rows, baseline):
+        assert [row[column] for column in INTENSITY_COLUMNS] == [
+            original[column] for column in INTENSITY_COLUMNS
+        ]
+        assert row["volume_mm3"] == original["volume_mm3"]
+    assert all(path.read_bytes() == original for path, original in inputs.items())
+
+
+def test_report_pet_reduction_overflow_preserves_ct_statistics(tmp_path):
+    source = np.array([[[2.0, 4.0]]])
+    paths = save_intensity_inputs(tmp_path, source, [(np.ones(source.shape), {1: "target"})])
+    pet_path = save_pet_volume(tmp_path, [[[1e308, 1e308]]])
+
+    row, = run_report(tmp_path, paths, pet_volume=pet_path)
+
+    assert [float(row[column]) for column in INTENSITY_COLUMNS] == [2, 4, 3, 3, 1, 6]
+    assert all(row[column] == "" for column in PET_INTENSITY_COLUMNS)
+    assert "PET" in row["warnings"]
+    assert "numeric range" in row["warnings"]
+    assert row["volume_mm3"] == "6"
+
+
+def test_report_pet_statistics_include_voxels_across_sampling_batches(tmp_path):
+    shape = (2, 129, 257)
+    source = np.zeros(shape, dtype=np.float64)
+    paths = save_intensity_inputs(tmp_path, source, [(np.ones(shape), {1: "large"})])
+    pet = np.full(shape, 2.0)
+    pet[-1, -1, -1] = 10.0
+    pet_path = save_pet_volume(tmp_path, pet)
+
+    row, = run_report(tmp_path, paths, pet_volume=pet_path)
+
+    count = pet.size
+    assert [float(row[column]) for column in PET_INTENSITY_COLUMNS] == pytest.approx(
+        [2, 10, 2 + 8 / count, 2, 8 * (count - 1) ** 0.5 / count, 2 * count + 8],
+        rel=1e-11,
+    )
+    assert "PET" not in row["warnings"]
+
+
+def test_report_pet_dicom_applies_rescale_and_metadata_slice_order(tmp_path, dicom_fixtures):
+    pet_paths = sorted((dicom_fixtures / "dicom_rescale").glob("*.dcm"))
+    assert len(pet_paths) == 2
+    source = itk.image_from_array(np.arange(100, 112, dtype=np.float64).reshape(2, 2, 3))
+    source.SetSpacing([0.5, 2.0, 3.0])
+    source.SetOrigin([10.0, 20.0, 30.0])
+    itk.imwrite(source, str(tmp_path / "original-volume.nrrd"))
+    image = itk.image_from_array(np.array([
+        [[1, 0, 0], [0, 1, 0]], [[0, 1, 0], [0, 0, 1]],
+    ], dtype=np.uint8))
+    image.CopyInformation(source)
+    labelmap = tmp_path / "target.seg.nrrd"
+    write_segmentation(image, labelmap, [{
+        "value": 1, "name": "target", "color": [255, 0, 0, 255],
+    }])
+    inputs = {path: path.read_bytes() for path in [
+        labelmap, tmp_path / "original-volume.nrrd", *pet_paths,
+    ]}
+
+    row, = run_report(tmp_path, [labelmap], pet_volume=",".join(map(str, pet_paths)))
+
+    assert [float(row[column]) for column in PET_INTENSITY_COLUMNS] == pytest.approx(
+        [-8.75, 21.25, 6.25, 6.25, 162.5 ** 0.5, 25], rel=1e-11,
+    )
+    assert [float(row[column]) for column in INTENSITY_COLUMNS] == pytest.approx(
+        [100, 111, 105.5, 105.5, 16.25 ** 0.5, 422], rel=1e-11,
+    )
+    assert row["volume_mm3"] == "12"
+    assert "PET" not in row["warnings"]
+    assert all(path.read_bytes() == original for path, original in inputs.items())
+
+
+def test_report_keeps_multifile_ct_and_pet_as_separate_volume_inputs(tmp_path, dicom_fixtures):
+    from fixtures.generate_dicom import _write_slice
+
+    for z, pixels in enumerate([
+        [[10, 20, 30], [40, 50, 60]],
+        [[110, 120, 130], [140, 150, 160]],
+    ]):
+        _write_slice(
+            tmp_path, "ct", f"slice{1 - z}.dcm", pixels,
+            patient_id="VV-REPORT", instance=z + 1,
+            position=(10.0, 20.0, 30.0 + z * 3.0),
+            spacing=(2.0, 0.5, 3.0), slope=2, intercept=-100,
+        )
+    ct_paths = sorted((tmp_path / "ct").glob("*.dcm"), reverse=True)
+    pet_paths = sorted((dicom_fixtures / "dicom_rescale").glob("*.dcm"))
+    labels = itk.image_from_array(np.array([
+        [[1, 0, 0], [0, 1, 0]], [[0, 1, 0], [0, 0, 1]],
+    ], dtype=np.uint8))
+    labels.SetSpacing([0.5, 2.0, 3.0])
+    labels.SetOrigin([10.0, 20.0, 30.0])
+    labelmap = tmp_path / "target.seg.nrrd"
+    write_segmentation(labels, labelmap, [{
+        "value": 1, "name": "target", "color": [255, 0, 0, 255],
+    }])
+
+    row, = run_report(
+        tmp_path, [labelmap], volume=",".join(map(str, ct_paths)),
+        pet_volume=",".join(map(str, pet_paths)),
+    )
+
+    assert [float(row[column]) for column in INTENSITY_COLUMNS] == pytest.approx(
+        [-80, 220, 70, 70, 13700 ** 0.5, 280], rel=1e-11,
+    )
+    assert [float(row[column]) for column in PET_INTENSITY_COLUMNS] == pytest.approx(
         [-8.75, 21.25, 6.25, 6.25, 162.5 ** 0.5, 25], rel=1e-11,
     )
     assert row["volume_mm3"] == "12"
