@@ -635,6 +635,7 @@ def test_report_rejects_second_map_grid_mismatch_before_writing(tmp_path, mismat
 
     assert result.returncode != 0
     assert "same voxel grid" in result.stderr
+    assert "Traceback" not in result.stderr
     assert output.read_bytes() == original
     assert set(tmp_path.iterdir()) == before_files
 
@@ -667,8 +668,10 @@ def test_report_rejects_nonscalar_or_nonvolume_underlay(tmp_path, invalid_volume
         cwd=REPO_ROOT, text=True, capture_output=True,
     )
 
-    assert result.returncode != 0
-    assert "scalar 3-D images" in result.stderr
+    assert result.returncode == 1
+    assert result.stderr.strip() == (
+        "Error: input volume and label maps must be scalar 3-D images"
+    )
     assert not output.exists()
 
 

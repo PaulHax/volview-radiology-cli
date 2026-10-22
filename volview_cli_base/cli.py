@@ -22,4 +22,7 @@ def run(main):
         with open(xml_spec, encoding="utf-8") as spec:
             print(spec.read())
         sys.exit(0)
-    main(CLIArgumentParser().parse_args())
+    try:
+        main(CLIArgumentParser().parse_args())
+    except ValueError as error:
+        sys.exit(f"Error: {error}")
